@@ -1,0 +1,2013 @@
+---
+title: "Autocorrelation"
+author: "Mégane"
+date: '`r format(Sys.time(), "%d %B %Y %H:%M")`'
+output: html_document
+---
+
+```{r libraries, echo=FALSE, warning=FALSE, message=FALSE}
+library("readr")
+library("viridis")
+library("scales")
+library("lubridate")
+library("gsignal")
+library("FactoMineR")
+library("factoextra")
+library("gplots")
+library("heatwaveR")
+library("dplyr")
+library("imputeTS")
+library("Metrics")
+library("tidyr")
+library("tseries")
+library("forecast")
+library("tsDyn")
+library("tsoutliers")
+library("seacarb")
+library("lmodel2")
+library("lmtest")
+library("ggExtra")
+library("corrplot")
+library("ggcorrplot")
+library("marelac")
+library("kableExtra")
+library("stringr")
+library("berryFunctions")
+library("LakeMetabolizer")
+library("rMR")
+library("caTools")
+library("autostsm")
+library("geoTS")
+library("TSA")
+library("cowplot")
+library("EnvStats")
+
+#theme for plots :
+Mytheme <- function(size_labs = 6, face_font="plain", ...) {
+  theme_bw() +
+    theme(axis.text.x = element_text(face=face_font, size=size_labs, color="black"),
+          axis.title.x = element_text(face=face_font, size=size_labs, margin=margin(0,0,0,0,"pt")),
+          axis.text.y = element_text(face=face_font, color="black", size=size_labs),
+          axis.title.y = element_text(face=face_font, size=size_labs),
+          axis.ticks.x = element_line(size=0.1),
+          axis.ticks.y = element_line(size=0.1),
+          axis.ticks.length = unit(1.1, "mm"),
+          panel.grid.major = element_line(size = 0.25, color="black", linetype="dotted"),
+          aspect.ratio = 1 / 3,
+          plot.margin = margin(t = 0, r = 1, b = 0, l = 0, unit = "lines")
+    )
+}
+
+
+
+```
+
+## TEST on surface data at Point B (2007-2022), clean tab + imputed values
+
+```{r import data somlit, echo=FALSE, warning=FALSE, message=FALSE}
+
+data_somlit_surf <- read_delim("../../Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+
+
+
+```
+
+### → **Temperature :**
+
+*Plots*
+
+```{r creation ts object + plots, echo=FALSE, warning=FALSE, message=FALSE}
+
+#frequency : 365.25/7 = 52.17857
+ts_temp <- ts(data_somlit_surf$impute_temp, start = c(2007,1), end = c(2022,52), freq = 52)
+
+#autoplot :
+autoplot_ts_temp <- autoplot(ts_temp) +
+ggtitle('Sea surface temperature (°C) at Point B - 2007-2022') +
+xlab('') +
+ylab('Temp. (°C')
+
+autoplot_ts_temp
+
+#creation data frame de ts_temp :
+df_ts_temp <- as.data.frame(autoplot_ts_temp$data) %>% 
+  rename(DATE = x, TEMP = y)
+
+#seasonal plot :
+#seasonal_plot_ts_temp <- ggseasonplot(ts_temp, year.labels = F, year.labels.left = F)
+
+#polar plot :
+#polar_plot <- ggseasonplot(ts_temp, polar = TRUE)
+
+
+##polar plot :
+polar_plot_temp <- ggseasonplot(ts_temp, polar = TRUE, main="", xlab="", ylab = "",
+             season.labels = c("Jan","Feb","Mar","Apr","May","Jun","Jul",
+                               "Aug","Sep","Oct","Nov","Dec")) +
+  scale_colour_discrete(name="Années", type=c("#80D0D0", "#83A697", "#97DFC6", "#B0F2B6",  "#F4FEFE", "#FFF0BC", 
+                               "#F7E269", "#EFD807", "#DD985C", "#ED7F10", "#CC5500", "#FF866A", 
+                               "#E9383F", "#C60800", "#850606", "#6E0B14"))
+
+polar_plot_temp
+
+```
+
+*Correlogram*
+
+Trend pattern (correlogram 1 : less correlation with increasing lags),\
+Seasonal pattern (correlogram 2 : correlation (highest value at lag 52/53) and anti-correlation (lowest value at lag 26/27) successions),\
+Periodicity = 52 (highest correlation value at 52/53)
+
+```{r autocorrelation temperature - surface, echo=FALSE, warning=FALSE, message=FALSE}
+
+#correlogram :
+correlogram1 <- acf(ts_temp, type = "cor", lag.max = 600, plot = T)
+
+correlogram2 <- acf(ts_temp, type = "cor", lag.max = 55, plot = T)
+
+
+```
+
+*Trend and seasonal patterns identification :*
+
+Time series = Tt + St + ɛt\
+with Tt : trend St : seasonal pattern ɛt : residual part
+
+#### Trend estimation by moving average (manually) :
+
+```{r moving average manual, echo=FALSE, warning=FALSE, message=FALSE}
+
+autoplot(ts_temp, series="Data") +
+autolayer(ma(ts_temp,26), series="26-MA") +
+autolayer(ma(ts_temp,52), series="52-MA") +
+xlab("Year") + ylab("Temp. (°C)") +
+ggtitle("Sea surface temperature (°C) at Point B - 2007-2022") +
+scale_colour_manual(values=c("Data"="grey50","26-MA"="red","52-MA"="blue"),
+                    breaks=c("Data","26-MA","52-MA"))
+
+
+```
+
+#### Trend estimation by moving average (decompose function) :
+
+*Quick overview of the components of the series*\
+*increasing trend more visible*
+
+```{r decompose function, echo=FALSE, warning=FALSE, message=FALSE, fig.width=7,fig.height=4}
+
+#type = additive because the seasonal pattern doesn't seem to increase in variation, seasonal pattern looks constant
+ts_temp_decomp <- decompose(ts_temp, type = "additive") #pareil qu'en rajoutant : filter = rep(1/52,52)
+
+autoplot(ts_temp_decomp) +
+  xlab(' ')
+
+
+#plot(ts_temp_decomp$figure)
+
+```
+
+#### Remove seasonality :
+
+→ measured values - seasonal pattern\
+OR\
+→ trend + remainders
+
+*by appling trend on this series, we see the increase*
+
+slope : 0.058 ± 0.009\
+Int. : -98.07 ± 18.57
+
+```{r remove seasonal pattern, echo=FALSE, warning=FALSE, message=FALSE, fig.width=7,fig.height=4}
+
+#2 ways :
+# 1 : measured values - seasonal pattern
+# 2 : trend + random
+
+ts_temp_less_season <- ts_temp_decomp$x - ts_temp_decomp$seasonal
+
+plot_ts_temp_less_season <- autoplot(ts_temp_less_season) + 
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Sea surface temperature time series (without seasonality)") +
+  geom_smooth(method=lm)
+
+
+#trouver comment récup les data de la regression
+#comme ca :
+
+reg_val_less_season <- as.data.frame(plot_ts_temp_less_season$data)
+
+model_less_season <- lm(formula=y~x, data=reg_val_less_season) #compraison avec kapsenberg, pas deconnant
+summary(model_less_season) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_temp_less_season <- autoplot(ts_temp_less_season) + 
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Sea surface temperature time series (without seasonality)") 
+#  geom_smooth(method=lm) +
+#  annotate(geom="text", x=2015, y=23, label="slope : 0.058 ± 0.009 *", color="black")
+
+plot_ts_temp_less_season
+
+
+FFtemp <- kendallSeasonalTrendTest(impute_temp ~ month(datetime) + year(datetime), data = data_somlit_surf)
+FFtemp$estimate
+
+```
+
+#### White noise test :
+
+If residuals of the time series are assimilated to a white noise = stationary time series\
+Stationary time series = no trend + no seasonality
+
+```{r white noise, echo=FALSE, warning=FALSE, message=FALSE}
+
+#if there is white noise in the series, then = stationary series
+#stationary series = no trend + no seasonal pattern
+#checking of residuals to detect or not white noise
+
+Box.test(ts_temp_decomp$random, type = "Ljung-Box")
+
+#p-value is very low
+#so we reject that residuals could be associated to a white noise
+
+```
+
+*significative p-value, so we reject that residuals could be associated to a white noise*
+
+#### WLS fit (Sutton et al. 2022) :
+
+```{r Best practices, echo=FALSE, warning=FALSE, message=FALSE}
+
+#simple regression : 
+summary(model_less_season)
+##
+
+
+#define weights to use
+weight <- 1 / lm(abs(model_less_season$residuals) ~ model_less_season$fitted.values)$fitted.values^2
+
+#perform weighted least squares regression
+wls_model <- lm(reg_val_less_season$y ~ reg_val_less_season$x, data = reg_val_less_season, weights = weight)
+
+#view summary of model
+summary(wls_model)
+##
+
+
+
+#plot with WLS trend :
+
+model_less_season %>% 
+  ggplot() + 
+  geom_line(aes(x=x, y=y)) + 
+  geom_line(aes(x=x, y=wls_model$fitted.values), col="#C4698F") + 
+  scale_x_discrete(name="") + 
+  scale_y_continuous(name="Temp. (°C)") + 
+  ggtitle("Sea surface temperature time series (without seasonality) + WLS trend") + 
+  annotate(geom="text", x=2015, y=23, label="slope : 0.058 ± 0.009", color="black") #rajouter confidence interval
+
+
+```
+
+## pCO2 therm & non-therm : Point B (2007-2022)  
+  
+### SURFACE  
+  
+#### By residuals (Bates et al. 2014)  
+  
+
+```{r pCO2 bio - bates regression - surface, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+## Import data DELTA PCO2 BIO :
+data_pco2 <- read_delim("../../Data/data_PointB/DATA_SOMLIT_07-22_impute_0m_deltas_pCO2.csv", 
+                        delim = ";", escape_double = FALSE, trim_ws = TRUE) %>% 
+  dplyr::filter(datetime <= "2022-09-28")
+
+## Monthly means
+
+monthly_means <- ungroup(data_pco2) %>% 
+  group_by(Month) %>%
+  summarise(pco2_therm_month = mean(TpCO2, na.rm = TRUE),
+            pco2_nontherm_month = mean(NpCO2, na.rm = TRUE))
+
+##
+
+## Parameters
+
+anomalies <- left_join(ungroup(data_pco2), monthly_means, by = "Month") %>%
+  mutate(pco2_therm_ano = TpCO2 - pco2_therm_month,
+         pco2_nontherm_ano = NpCO2 - pco2_nontherm_month)
+
+
+
+# Regression and table anomalies
+var_list <- c("pco2_therm_ano", "pco2_nontherm_ano")
+
+lms <- lapply(var_list, function(x) {
+  summary(lm(substitute(i ~ decimal_date(datetime), list(i = as.name(x))), data = anomalies))
+})
+
+reg <- NULL
+for (i in 1:length(var_list)) {
+  #one loops through all anomalies
+  # calculate probability of fstatistic because it cannot be extracted from lms above
+  # see http://stats.stackexchange.com/questions/92824/extracting-the-model-p-value-for-a-multiple-regression-in-r
+  # slope returned by lm is per second
+  prob <-
+    pf(lms[[i]]$fstatistic[1],
+       lms[[i]]$fstatistic[2],
+       lms[[i]]$fstatistic[3],
+       lower.tail = FALSE)
+  reg <-
+    rbind(reg, as.numeric(
+      c(
+        lms[[i]]$coefficients[2, 1],
+        lms[[i]]$coefficients[2, 2],
+        lms[[i]]$coefficients[2, 4],
+        lms[[i]]$coefficients[1, 1],
+        lms[[i]]$coefficients[1, 2],
+        lms[[i]]$coefficients[1, 4],
+        lms[[i]]$fstatistic[1],
+        lms[[i]]$fstatistic[3],
+        lms[[i]]$r.squared,
+        prob
+      )
+    ))
+}
+colnames(reg) <-
+  c("Slope",
+    "SE Slope",
+    "P Slope",
+    "Intercept",
+    "SE int.",
+    "P int.",
+    "F",
+    "df",
+    "R2",
+    "P value")
+row.names(reg) <- var_list
+reg_ano <- reg
+
+reg_ano
+
+FF_pco2_therm <- kendallSeasonalTrendTest(TpCO2 ~ month(datetime) + year(datetime), data = data_pco2)
+FF_pco2_nontherm <- kendallSeasonalTrendTest(NpCO2 ~ month(datetime) + year(datetime), data = data_pco2)
+
+```
+  
+  
+
+```{r pCO2 therm - bates plots, echo=FALSE, warning=FALSE, message=FALSE, fig.width=9,fig.height=4}
+
+## Plot anomalies :
+
+plot_ano_pCO2therm <- ggplot(data = anomalies, aes(x = datetime, y = pco2_therm_ano), na.rm=TRUE) +
+  scale_x_date(date_breaks="2 year", date_minor_breaks="1 years", labels = NULL) +
+  geom_point(colour="#22427C", na.rm=TRUE, size = 0.7) + 
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="",x="", y=expression(paste(italic(p), CO[2], " therm (µatm)"))) 
+#  annotate(geom="text", x=as.Date("2010-03-02"), y=80, label="slope : 1.19 ± 0.18 *", color="black")
+
+plot_ano_pCO2nontherm <- ggplot(data = anomalies, aes(x = datetime, y = pco2_nontherm_ano), na.rm=TRUE) +
+  scale_x_date(date_breaks="2 year", date_minor_breaks="1 years", date_labels = "%Y") +
+  geom_point(colour="#22427C", na.rm=TRUE, size = 0.7) + 
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="",x="", y=expression(paste(italic(p), CO[2], " non-therm (µatm)"))) 
+#  annotate(geom="text", x=as.Date("2010-03-02"), y=80, label="slope : 3.64 ± 0.14 *", color="black")
+
+
+plot_pco2_therm <- data_pco2 %>% 
+  ggplot() +
+  aes(x=datetime, y=TpCO2) +
+  geom_line(size=0.8, col = "black", linewidth = 0.5) +
+  scale_x_date(name="", date_breaks="2 year", date_minor_breaks="1 years", labels = NULL) +
+  scale_y_continuous(name=expression(paste(italic(p), CO[2], " therm (µatm)")))
+
+plot_pco2_nontherm <- data_pco2 %>% 
+  ggplot() +
+  aes(x=datetime, y=NpCO2) +
+  geom_line(size=0.8, col = "black", linewidth = 0.5) +
+  scale_x_date(name="", date_breaks="2 year", date_minor_breaks="1 years", date_labels = "%Y") +
+  scale_y_continuous(name=expression(paste(italic(p), CO[2], " non-therm (µatm)")))
+
+plot_grid(plot_pco2_therm, plot_ano_pCO2therm, 
+          plot_pco2_nontherm, plot_ano_pCO2nontherm, align='vh', ncol=2)
+
+
+```
+  
+  
+
+#### By autocorrelation (decompose function)  
+  
+
+```{r pCO2 therm & non-therm - autocorrelation, echo=FALSE, warning=FALSE, message=FALSE}
+
+#frequency : 365.25/7 = 52.17857
+#la serie se termine le 28 sept.2022 : la 39e semaine
+ts_pco2_therm <- ts(data_pco2$TpCO2, start = c(2007,1), end = c(2022,39), freq = 52)
+ts_pco2_nontherm <- ts(data_pco2$NpCO2, start = c(2007,1), end = c(2022,39), freq = 52)
+
+
+#type = multiplicative because the seasonal pattern seems to increase in variation according to time
+ts_decomp_pco2_therm <- decompose(ts_pco2_therm, type = "multiplicative") 
+
+autoplot(ts_decomp_pco2_therm) +
+  xlab("")
+
+ts_decomp_pco2_nontherm <- decompose(ts_pco2_nontherm, type = "multiplicative") 
+
+autoplot(ts_decomp_pco2_nontherm) +
+  xlab("")
+
+```
+  
+  
+→ remove seasonality :  
+  
+
+
+```{r pco2 therm & non-therm - remove seasonality, echo=FALSE, warning=FALSE, message=FALSE}
+
+ts_pco2_therm_less_season <- ts_decomp_pco2_therm$x - ts_decomp_pco2_therm$seasonal
+ts_pco2_nontherm_less_season <- ts_decomp_pco2_nontherm$x - ts_decomp_pco2_nontherm$seasonal
+
+plot_ts_pco2_therm_less_season <- autoplot(ts_pco2_therm_less_season) + 
+  xlab("") + ylab(expression(paste(italic(p), CO[2], " therm (µatm)"))) +
+  ggtitle("Surface pCO2 therm variations (without seasonality)") +
+  geom_smooth(method=lm)
+
+plot_ts_pco2_nontherm_less_season <- autoplot(ts_pco2_nontherm_less_season) + 
+  xlab("") + ylab(expression(paste(italic(p), CO[2], " non-therm (µatm)"))) +
+  ggtitle("Surface pCO2 non-therm variations (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_pco2_therm_less_season <- as.data.frame(plot_ts_pco2_therm_less_season$data)
+reg_val_ts_pco2_nontherm_less_season <- as.data.frame(plot_ts_pco2_nontherm_less_season$data)
+
+model_ts_pco2_therm_less_season <- lm(formula=y~x, data=reg_val_ts_pco2_therm_less_season)
+summary(model_ts_pco2_therm_less_season) 
+model_ts_pco2_nontherm_less_season <- lm(formula=y~x, data=reg_val_ts_pco2_nontherm_less_season)
+summary(model_ts_pco2_nontherm_less_season)
+
+#plot with slope value :
+plot_ts_pco2_therm_less_season <- autoplot(ts_pco2_therm_less_season) + 
+  xlab("") + ylab(expression(paste(italic(p), CO[2], " therm (µatm)"))) +
+  ggtitle("Surface pCO2 therm variations (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=600, label="slope : 1.73 ± 0.6 *", color="black")
+
+plot_ts_pco2_nontherm_less_season <- autoplot(ts_pco2_nontherm_less_season) + 
+  xlab("") + ylab(expression(paste(italic(p), CO[2], " non-therm (µatm)"))) +
+  ggtitle("Surface pCO2 non-therm variations (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=490, label="slope : 3.49 ± 0.24 *", color="black")
+
+
+plot_ts_pco2_therm_less_season
+plot_ts_pco2_nontherm_less_season
+
+
+```
+  
+  
+### DEPTH 50  
+  
+#### By residuals (Bates et al. 2014)  
+  
+
+```{r pCO2 bio - bates regression - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+
+## Import data DELTA PCO2 BIO :
+data_pco2_prof <- read_delim("../../Data/data_PointB/DATA_SOMLIT_07-22_impute_50m.csv", 
+                        delim = ";", escape_double = FALSE, trim_ws = TRUE) %>% 
+  dplyr::filter(datetime <= "2022-09-28")
+
+data_pco2_prof <- data_pco2_prof %>% 
+  mutate(Tmean = mean(impute_temp, na.rm=T),
+         pCO2_w_mean = mean(impute_pco2_w, na.rm = TRUE),
+         NpCO2 = impute_pco2_w * exp(0.0423*(Tmean-impute_temp)),
+         TpCO2 = pCO2_w_mean * exp(0.0423*(impute_temp-Tmean)))
+
+## Monthly means
+
+monthly_means2 <- ungroup(data_pco2_prof) %>% 
+  group_by(Month) %>%
+  summarise(pco2_therm_month = mean(TpCO2, na.rm = TRUE),
+            pco2_nontherm_month = mean(NpCO2, na.rm = TRUE))
+
+##
+
+## Parameters
+
+anomalies2 <- left_join(ungroup(data_pco2_prof), monthly_means2, by = "Month") %>%
+  mutate(pco2_therm_ano = TpCO2 - pco2_therm_month,
+         pco2_nontherm_ano = NpCO2 - pco2_nontherm_month)
+
+
+
+# Regression and table anomalies
+var_list <- c("pco2_therm_ano", "pco2_nontherm_ano")
+
+lms <- lapply(var_list, function(x) {
+  summary(lm(substitute(i ~ decimal_date(datetime), list(i = as.name(x))), data = anomalies2))
+})
+
+reg <- NULL
+for (i in 1:length(var_list)) {
+  #one loops through all anomalies
+  # calculate probability of fstatistic because it cannot be extracted from lms above
+  # see http://stats.stackexchange.com/questions/92824/extracting-the-model-p-value-for-a-multiple-regression-in-r
+  # slope returned by lm is per second
+  prob <-
+    pf(lms[[i]]$fstatistic[1],
+       lms[[i]]$fstatistic[2],
+       lms[[i]]$fstatistic[3],
+       lower.tail = FALSE)
+  reg <-
+    rbind(reg, as.numeric(
+      c(
+        lms[[i]]$coefficients[2, 1],
+        lms[[i]]$coefficients[2, 2],
+        lms[[i]]$coefficients[2, 4],
+        lms[[i]]$coefficients[1, 1],
+        lms[[i]]$coefficients[1, 2],
+        lms[[i]]$coefficients[1, 4],
+        lms[[i]]$fstatistic[1],
+        lms[[i]]$fstatistic[3],
+        lms[[i]]$r.squared,
+        prob
+      )
+    ))
+}
+colnames(reg) <-
+  c("Slope",
+    "SE Slope",
+    "P Slope",
+    "Intercept",
+    "SE int.",
+    "P int.",
+    "F",
+    "df",
+    "R2",
+    "P value")
+row.names(reg) <- var_list
+reg_ano_prof <- reg
+
+reg_ano_prof
+
+FF_pco2_therm_prof <- kendallSeasonalTrendTest(TpCO2 ~ month(datetime) + year(datetime), data = data_pco2_prof)
+FF_pco2_nontherm_prof <- kendallSeasonalTrendTest(NpCO2 ~ month(datetime) + year(datetime), data = data_pco2_prof)
+
+```
+  
+  
+
+```{r pCO2 therm - bates plots 50m, echo=FALSE, warning=FALSE, message=FALSE, fig.width=9,fig.height=4}
+
+## Plot anomalies :
+
+plot_ano_pCO2therm_prof <- ggplot(data = anomalies2, aes(x = datetime, y = pco2_therm_ano), na.rm=TRUE) +
+  scale_x_date(date_breaks="2 year", date_minor_breaks="1 years", labels = NULL) +
+  geom_point(colour="#22427C", na.rm=TRUE, size = 0.7) + 
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="",x="", y=expression(paste(italic(p), CO[2], " therm (µatm)"))) 
+#  annotate(geom="text", x=as.Date("2010-03-02"), y=80, label="slope : 1.19 ± 0.18 *", color="black")
+
+plot_ano_pCO2nontherm_prof <- ggplot(data = anomalies2, aes(x = datetime, y = pco2_nontherm_ano), na.rm=TRUE) +
+  scale_x_date(date_breaks="2 year", date_minor_breaks="1 years", date_labels = "%Y") +
+  geom_point(colour="#22427C", na.rm=TRUE, size = 0.7) + 
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="",x="", y=expression(paste(italic(p), CO[2], " non-therm (µatm)"))) 
+#  annotate(geom="text", x=as.Date("2010-03-02"), y=80, label="slope : 3.64 ± 0.14 *", color="black")
+
+
+plot_pco2_therm_prof <- data_pco2_prof %>% 
+  ggplot() +
+  aes(x=datetime, y=TpCO2) +
+  geom_line(size=0.5, col = "black") +
+  scale_x_date(name="", date_breaks="2 year", date_minor_breaks="1 years", labels = NULL) +
+  scale_y_continuous(name=expression(paste(italic(p), CO[2], " therm (µatm)")))
+
+plot_pco2_nontherm_prof <- data_pco2_prof %>% 
+  ggplot() +
+  aes(x=datetime, y=NpCO2) +
+  geom_line(size=0.5, col = "black") +
+  scale_x_date(name="", date_breaks="2 year", date_minor_breaks="1 years", date_labels = "%Y") +
+  scale_y_continuous(name=expression(paste(italic(p), CO[2], " non-therm (µatm)")))
+
+plot_grid(plot_pco2_therm_prof, plot_ano_pCO2therm_prof, 
+          plot_pco2_nontherm_prof, plot_ano_pCO2nontherm_prof, align='vh', ncol=2)
+
+
+```
+  
+  
+
+#### By autocorrelation (decompose function)  
+  
+
+```{r pCO2 therm & non-therm - autocorrelation - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+#frequency : 365.25/7 = 52.17857
+#la serie se termine le 28 sept.2022 : la 39e semaine
+ts_pco2_therm_prof <- ts(data_pco2_prof$TpCO2, start = c(2007,1), end = c(2022,39), freq = 52)
+ts_pco2_nontherm_prof <- ts(data_pco2_prof$NpCO2, start = c(2007,1), end = c(2022,39), freq = 52)
+
+
+#type = multiplicative because the seasonal pattern seems to increase in variation according to time
+ts_decomp_pco2_therm_prof <- decompose(ts_pco2_therm_prof, type = "multiplicative") 
+
+autoplot(ts_decomp_pco2_therm_prof) +
+  xlab("")
+
+ts_decomp_pco2_nontherm_prof <- decompose(ts_pco2_nontherm_prof, type = "multiplicative") 
+
+autoplot(ts_decomp_pco2_nontherm_prof) +
+  xlab("")
+
+```
+  
+  
+
+→ remove seasonality :  
+  
+
+
+```{r pco2 therm & non-therm - remove seasonality - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+ts_pco2_therm_less_season_prof <- ts_decomp_pco2_therm_prof$x - ts_decomp_pco2_therm_prof$seasonal
+ts_pco2_nontherm_less_season_prof <- ts_decomp_pco2_nontherm_prof$x - ts_decomp_pco2_nontherm_prof$seasonal
+
+plot_ts_pco2_therm_less_season_prof <- autoplot(ts_pco2_therm_less_season_prof) + 
+  xlab("") + ylab(expression(paste(italic(p), CO[2], " therm (µatm)"))) +
+  ggtitle("pCO2 therm variations at 50 m (without seasonality)") +
+  geom_smooth(method=lm)
+
+plot_ts_pco2_nontherm_less_season_prof <- autoplot(ts_pco2_nontherm_less_season_prof) + 
+  xlab("") + ylab(expression(paste(italic(p), CO[2], " non-therm (µatm)"))) +
+  ggtitle("pCO2 non-therm variations at 50 m (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_pco2_therm_less_season_prof <- as.data.frame(plot_ts_pco2_therm_less_season_prof$data)
+reg_val_ts_pco2_nontherm_less_season_prof <- as.data.frame(plot_ts_pco2_nontherm_less_season_prof$data)
+
+model_ts_pco2_therm_less_season_prof <- lm(formula=y~x, data=reg_val_ts_pco2_therm_less_season_prof)
+summary(model_ts_pco2_therm_less_season_prof) 
+model_ts_pco2_nontherm_less_season_prof <- lm(formula=y~x, data=reg_val_ts_pco2_nontherm_less_season_prof)
+summary(model_ts_pco2_nontherm_less_season_prof)
+
+#plot with slope value :
+plot_ts_pco2_therm_less_season_prof <- autoplot(ts_pco2_therm_less_season_prof) + 
+  xlab("") + ylab(expression(paste(italic(p), CO[2], " therm (µatm)"))) +
+  ggtitle("pCO2 therm variations at 50 m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=600, label="slope : 0.40 ± 0.22 *", color="black")
+
+plot_ts_pco2_nontherm_less_season_prof <- autoplot(ts_pco2_nontherm_less_season_prof) + 
+  xlab("") + ylab(expression(paste(italic(p), CO[2], " non-therm (µatm)"))) +
+  ggtitle("pCO2 non-therm variations at 50 m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=490, label="slope : 3.10 ± 0.18 *", color="black")
+
+
+plot_ts_pco2_therm_less_season_prof
+plot_ts_pco2_nontherm_less_season_prof
+
+
+```
+
+
+
+## CO2 fluxes : Point B (2009-2021)
+
+#### By residuals (Bates et al. 2014)
+
+```{r CO2 fluxes - bates regression, echo=FALSE, warning=FALSE, message=FALSE}
+
+## Import data :
+#filter values from 2009 until 2021, because no pCO2 air data for 2022 and no wind data before 2009
+data_fluxes <- read_delim("../../Data/data_PointB/DATA_SOMLIT_07-22_impute_0m_deltas_pCO2_and_fluxes_CO2.csv", 
+                          delim = ";", escape_double = FALSE, trim_ws = TRUE) %>% 
+  dplyr::filter(datetime >= "2009-01-06" & datetime <= "2021-12-28")
+  
+
+
+## Monthly means
+
+monthly_means_fluxes <- ungroup(data_fluxes) %>% 
+  group_by(Month) %>%
+  summarise(flux_W92_month = mean(Flux_wan_92, na.rm = TRUE),
+            flux_W14_month = mean(Flux_CO2_2014, na.rm = TRUE))
+
+##
+
+## Parameters
+
+anomalies_fluxes <- left_join(ungroup(data_fluxes), monthly_means_fluxes, by = "Month") %>%
+  mutate(flux_W92_ano = Flux_wan_92 - flux_W92_month,
+         flux_W14_ano = Flux_CO2_2014 - flux_W14_month)
+
+
+
+# Regressions and tables of key parameters
+var_list <- c("Flux_wan_92", "Flux_CO2_2014")
+
+lm.test <- vector("list", length(var_list))
+
+for(i in seq_along(var_list)){
+  lm.test[[i]] <- lm(reformulate(var_list[i], "datetime"), data = anomalies_fluxes)
+}
+
+
+
+lms <- lapply(var_list, function(x) {
+  summary(lm(substitute(i ~ decimal_date(datetime), list(i = as.name(x))), 
+             data = anomalies_fluxes))
+})
+
+reg <- NULL
+for (i in 1:length(var_list)) {
+  #one loops through all anomalies
+  # calculate probability of fstatistic because it cannot be extracted from lms above
+  # see http://stats.stackexchange.com/questions/92824/extracting-the-model-p-value-for-a-multiple-regression-in-r
+  # slope returned by lm is per second
+  prob <-
+    pf(lms[[i]]$fstatistic[1],
+       lms[[i]]$fstatistic[2],
+       lms[[i]]$fstatistic[3],
+       lower.tail = FALSE)
+  reg <-
+    rbind(reg, as.numeric(
+      c(
+        lms[[i]]$coefficients[2, 1],
+        lms[[i]]$coefficients[2, 2],
+        lms[[i]]$coefficients[2, 4],
+        lms[[i]]$coefficients[1, 1],
+        lms[[i]]$coefficients[1, 2],
+        lms[[i]]$coefficients[1, 4],
+        lms[[i]]$fstatistic[1],
+        lms[[i]]$fstatistic[3],
+        lms[[i]]$r.squared,
+        prob
+      )
+    ))
+}
+
+colnames(reg) <-
+  c("Slope",
+    "SE Slope",
+    "P Slope",
+    "Intercept",
+    "SE int.",
+    "P int.",
+    "F",
+    "df",
+    "R2",
+    "P value")
+row.names(reg) <- var_list
+reg_ano_fluxes <- reg
+
+# Regression and table anomalies
+var_list <- c("flux_W92_ano", "flux_W14_ano")
+
+lms <- lapply(var_list, function(x) {
+  summary(lm(substitute(i ~ decimal_date(datetime), list(i = as.name(x))), data = anomalies_fluxes))
+})
+
+reg <- NULL
+for (i in 1:length(var_list)) {
+  #one loops through all anomalies
+  # calculate probability of fstatistic because it cannot be extracted from lms above
+  # see http://stats.stackexchange.com/questions/92824/extracting-the-model-p-value-for-a-multiple-regression-in-r
+  # slope returned by lm is per second
+  prob <-
+    pf(lms[[i]]$fstatistic[1],
+       lms[[i]]$fstatistic[2],
+       lms[[i]]$fstatistic[3],
+       lower.tail = FALSE)
+  reg <-
+    rbind(reg, as.numeric(
+      c(
+        lms[[i]]$coefficients[2, 1],
+        lms[[i]]$coefficients[2, 2],
+        lms[[i]]$coefficients[2, 4],
+        lms[[i]]$coefficients[1, 1],
+        lms[[i]]$coefficients[1, 2],
+        lms[[i]]$coefficients[1, 4],
+        lms[[i]]$fstatistic[1],
+        lms[[i]]$fstatistic[3],
+        lms[[i]]$r.squared,
+        prob
+      )
+    ))
+}
+colnames(reg) <-
+  c("Slope",
+    "SE Slope",
+    "P Slope",
+    "Intercept",
+    "SE int.",
+    "P int.",
+    "F",
+    "df",
+    "R2",
+    "P value")
+row.names(reg) <- var_list
+reg_ano_fluxes <- reg
+
+reg_ano_fluxes
+
+FF3 <- kendallSeasonalTrendTest(Flux_CO2_2014 ~ month(datetime) + year(datetime), data = data_fluxes)
+FF3$estimate
+
+```
+
+*by Wanninkhof et al. (2014) method :*\
+Increase of CO2 fluxes (more and more sources)
+
+```{r co2 fluxes - bates plots, echo=FALSE, warning=FALSE, message=FALSE}
+
+#plot Flux of Wan 2014 :
+plot_ano_flux_wan_14 <- ggplot(data = anomalies_fluxes, aes(x = datetime, y = flux_W14_ano), na.rm=TRUE) +
+  scale_x_date(date_breaks="2 year", date_minor_breaks="1 years", date_labels = "%Y") +
+  scale_y_continuous(labels = label_scientific()) +
+  geom_point(colour="#22427C", na.rm=TRUE, size = 0.7) + 
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="",x="", y="CO2 flux (mol of C/m²/h)") +
+  annotate(geom="text", x=as.Date("2012-03-20"), y=0.0010, label="slope : 4.72e-06 ± 1.17e-06 *", color="black")
+
+plot_flux_wan_14 <- data_fluxes %>% 
+  ggplot() +
+  aes(x=datetime, y=Flux_CO2_2014) + 
+  geom_line(size=0.8, col = "#303030", linewidth = 0.5) +
+  scale_x_date(name="") +
+  scale_y_continuous(name="CO2 fluxes (mol of C/m²/h)", labels = label_scientific()) +
+  ggtitle("")
+
+plot_flux_wan_14
+plot_ano_flux_wan_14
+
+```
+
+#### By autocorrelation (decompose function)
+
+```{r co2 fluxes - autocorrelation, echo=FALSE, warning=FALSE, message=FALSE}
+#NAs :
+data_fluxes <- data_fluxes %>% 
+  dplyr::filter(datetime >= "2009-01-06" & datetime <= "2021-12-28") %>% 
+  mutate(Flux_CO2_2014 = na_interpolation(Flux_CO2_2014, option="linear"))
+
+
+#creation ts object : Flux_CO2_2014
+#frequency : 365.25/7 = 52.17857
+ts_flux_2014 <- ts(data_fluxes$Flux_CO2_2014, start = c(2007,1), end = c(2021,52), freq = 52)
+
+#seasonal plot :
+seasonal_plot_ts_flux_2014 <- ggseasonplot(ts_flux_2014, year.labels = F, year.labels.left = F, col=terrain.colors(15))
+
+seasonal_plot_ts_flux_2014
+
+#correlograms :
+# correlogram1 <- acf(ts_flux_2014, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_flux_2014, type = "cor", lag.max = 55, plot = T)
+
+
+#type = multiplicative because the seasonal pattern seems to increase in variation according to time
+#change to additive, otherwise bug of seasonal pattern
+ts_flux_2014_decomp <- decompose(ts_flux_2014, type = "additive") 
+
+autoplot(ts_flux_2014_decomp) +
+  xlab(' ')
+
+```
+
+→ remove seasonality : bug dans les data
+
+```{r co2 fluxes - remove seasonality, echo=FALSE, warning=FALSE, message=FALSE}
+
+ts_flux_2014_less_season <- ts_flux_2014_decomp$x - ts_flux_2014_decomp$seasonal
+
+plot_ts_flux_2014_less_season <- autoplot(ts_flux_2014_less_season) + 
+  xlab("") + ylab("Flux (mol of C/m²/h)") +
+  ggtitle("CO2 flux air-ocean (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_flux_2014_less_season <- as.data.frame(plot_ts_flux_2014_less_season$data)
+
+model_ts_flux_2014_less_season <- lm(formula=y~x, data=reg_val_ts_flux_2014_less_season)
+summary(model_ts_flux_2014_less_season) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_flux_2014_less_season <- autoplot(ts_flux_2014_less_season) + 
+  xlab("") + ylab("Flux (mol of C/m²/h)") +
+  ggtitle("CO2 flux air-ocean (without seasonality)") +
+  geom_smooth(method=lm) 
+  annotate(geom="text", x=2010, y=100, label="slope : 2.012e-06 ± 9e-07 *", color="black")
+
+plot_ts_flux_2014_less_season
+
+
+```
+
+## Point B - period 2007-2022
+
+### SURFACE
+
+-   Temperature (°C) → done above ✓\
+-   Salinity\
+-   pH calculated\
+-   pH normalized (18 °C)\
+-   Total alcalinity (µmol/kg)\
+-   Total carbon - DIC (µmol/kg)
+-   Seawater pCO~2~ (µatm)
+
+#### By autocorrelation (decompose function)
+
+###### Salinity :
+
+```{r salinity - point b - autocorr, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : salinity
+#frequency : 365.25/7 = 52.17857
+ts_sal <- ts(data_somlit_surf$impute_sal, start = c(2007,1), end = c(2022,52), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_sal <- ggseasonplot(ts_sal, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_sal
+
+#correlograms :
+# correlogram1 <- acf(ts_sal, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_sal, type = "cor", lag.max = 55, plot = T)
+
+
+#type = additive because the seasonal pattern doesn't seem to increase in variation according to time
+ts_sal_decomp <- decompose(ts_sal, type = "additive") 
+
+autoplot(ts_sal_decomp) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_sal_less_season <- ts_sal_decomp$x - ts_sal_decomp$seasonal
+
+plot_ts_sal_less_season <- autoplot(ts_sal_less_season) + 
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_sal_less_season <- as.data.frame(plot_ts_sal_less_season$data)
+
+model_ts_sal_less_season <- lm(formula=y~x, data=reg_val_ts_sal_less_season)
+summary(model_ts_sal_less_season) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_sal_less_season <- autoplot(ts_sal_less_season) + 
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=36.5, label="slope : -9.817e-05 ± 2.123e-03 (non-significative)", color="black")
+
+plot_ts_sal_less_season
+
+FFsal <- kendallSeasonalTrendTest(impute_sal ~ month(datetime) + year(datetime), data = data_somlit_surf)
+FFsal$estimate
+
+```
+
+###### pH calculated :
+
+```{r pH - point b - autocorr, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : pH calculated
+
+
+#frequency : 365.25/7 = 52.17857
+#arret data pH_calc au 2022-09-28 :
+ts_pH <- ts(data_somlit_surf$pH_calc, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_pH <- ggseasonplot(ts_pH, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_pH
+
+#correlograms :
+# correlogram1 <- acf(ts_pH, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_pH, type = "cor", lag.max = 55, plot = T)
+
+
+#type = additive because the seasonal pattern doesn't seem to increase in variation according to time
+ts_pH_decomp <- decompose(ts_pH, type = "additive") 
+
+autoplot(ts_pH_decomp) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_pH_less_season <- ts_pH_decomp$x - ts_pH_decomp$seasonal
+
+plot_ts_pH_less_season <- autoplot(ts_pH_less_season) + 
+  xlab("") + ylab("pH calculated") +
+  ggtitle("pH time series (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_pH_less_season <- as.data.frame(plot_ts_pH_less_season$data)
+
+model_ts_pH_less_season <- lm(formula=y~x, data=reg_val_ts_pH_less_season)
+summary(model_ts_pH_less_season) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_pH_less_season <- autoplot(ts_pH_less_season) + 
+  xlab("") + ylab("pH calculated") +
+  ggtitle("pH time series (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2017, y=8.13, label="slope : -0.004 ± 0.00015 *", color="black")
+
+plot_ts_pH_less_season
+
+FFpH <- kendallSeasonalTrendTest(pH_calc ~ month(datetime) + year(datetime), data = data_somlit_surf)
+FFpH$estimate
+
+```
+
+###### pH normalized (18) :
+
+```{r pH(18) - point b - autocorr, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : pH 18
+
+
+#frequency : 365.25/7 = 52.17857
+#arret data pH_18 au 2022-09-28 :
+ts_pH_18 <- ts(data_somlit_surf$pH_18, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_pH_18 <- ggseasonplot(ts_pH_18, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_pH_18
+
+#correlograms :
+# correlogram1 <- acf(ts_pH_18, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_pH_18, type = "cor", lag.max = 55, plot = T)
+
+
+#type = additive because the seasonal pattern doesn't seem to increase in variation according to time
+ts_pH_18_decomp <- decompose(ts_pH_18, type = "additive") 
+
+autoplot(ts_pH_18_decomp) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_pH_18_less_season <- ts_pH_18_decomp$x - ts_pH_18_decomp$seasonal
+
+plot_ts_pH_18_less_season <- autoplot(ts_pH_18_less_season) + 
+  xlab("") + ylab("pH calculated") +
+  ggtitle("pH (18) time series (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_pH_18_less_season <- as.data.frame(plot_ts_pH_18_less_season$data)
+
+model_ts_pH_18_less_season <- lm(formula=y~x, data=reg_val_ts_pH_18_less_season)
+summary(model_ts_pH_18_less_season) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_pH_18_less_season <- autoplot(ts_pH_18_less_season) + 
+  xlab("") + ylab("pH (18)") +
+  ggtitle("pH normalized time series (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2017, y=8.13, label="slope : -0.003 ± 0.00012 *", color="black")
+
+plot_ts_pH_18_less_season
+
+FFpH_18 <- kendallSeasonalTrendTest(pH_18 ~ month(datetime) + year(datetime), data = data_somlit_surf)
+FFpH_18$estimate
+
+```
+
+###### Total alcalinity :
+
+```{r alcalinity - point b - autocorr, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : alcalinity
+#frequency : 365.25/7 = 52.17857
+ts_ta <- ts(data_somlit_surf$impute_ta, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_ta <- ggseasonplot(ts_ta, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_ta
+
+#correlograms :
+# correlogram1 <- acf(ts_ta, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_ta, type = "cor", lag.max = 55, plot = T)
+
+
+#type = additive because the seasonal pattern doesn't seem to increase in variation according to time
+ts_ta_decomp <- decompose(ts_ta, type = "additive") 
+
+autoplot(ts_ta_decomp) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_ta_less_season <- ts_ta_decomp$x - ts_ta_decomp$seasonal
+
+plot_ts_ta_less_season <- autoplot(ts_ta_less_season) + 
+  xlab("") + ylab("AT (µmol/kg)") +
+  ggtitle("Total alcalinity time series (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_ta_less_season <- as.data.frame(plot_ts_ta_less_season$data)
+
+model_ts_ta_less_season <- lm(formula=y~x, data=reg_val_ts_ta_less_season)
+summary(model_ts_ta_less_season) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_ta_less_season <- autoplot(ts_ta_less_season) + 
+  xlab("") + ylab("AT (µmol/kg)") +
+  ggtitle("Total alcalinity time series (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=2580, label="slope : 5.59e-01 ± 9.65e-02 *", color="black")
+
+plot_ts_ta_less_season
+
+FFta <- kendallSeasonalTrendTest(impute_ta ~ month(datetime) + year(datetime), data = data_somlit_surf)
+FFta$estimate
+
+```
+
+###### Total carbon :
+
+```{r dic - point b - autocorr, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : dic
+#frequency : 365.25/7 = 52.17857
+ts_dic <- ts(data_somlit_surf$impute_dic, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_dic <- ggseasonplot(ts_dic, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_dic
+
+#correlograms :
+# correlogram1 <- acf(ts_dic, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_dic, type = "cor", lag.max = 55, plot = T)
+
+
+#type = multiplicative because the seasonal pattern seems to increase in variation according to time
+ts_dic_decomp <- decompose(ts_dic, type = "multiplicative") 
+
+autoplot(ts_dic_decomp) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_dic_less_season <- ts_dic_decomp$x - ts_dic_decomp$seasonal
+
+plot_ts_dic_less_season <- autoplot(ts_dic_less_season) + 
+  xlab("") + ylab("Total carbon (µmol/kg)") +
+  ggtitle("DIC time series (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_dic_less_season <- as.data.frame(plot_ts_dic_less_season$data)
+
+model_ts_dic_less_season <- lm(formula=y~x, data=reg_val_ts_dic_less_season)
+summary(model_ts_dic_less_season) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_dic_less_season <- autoplot(ts_dic_less_season) + 
+  xlab("") + ylab("Total carbon (µmol/kg)") +
+  ggtitle("DIC time series (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=2300, label="slope : 2.37 ± 0.15 *", color="black")
+
+plot_ts_dic_less_season
+
+FFdic <- kendallSeasonalTrendTest(impute_dic ~ month(datetime) + year(datetime), data = data_somlit_surf)
+FFdic$estimate
+
+```
+
+###### Seawater pCO~2~
+
+```{r pco2 water - point b - autocorr, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : pco2 water
+#frequency : 365.25/7 = 52.17857
+ts_pco2w <- ts(data_somlit_surf$impute_pCO2_w, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_pco2w <- ggseasonplot(ts_pco2w, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_pco2w
+
+#correlograms :
+# correlogram1 <- acf(ts_sal, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_sal, type = "cor", lag.max = 55, plot = T)
+
+
+#type = multiplicative because the seasonal pattern seems to increase in variation according to time
+ts_pco2w_decomp <- decompose(ts_pco2w, type = "multiplicative") 
+
+autoplot(ts_pco2w_decomp) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_pco2w_less_season <- ts_pco2w_decomp$x - ts_pco2w_decomp$seasonal
+
+plot_ts_pco2w_less_season <- autoplot(ts_pco2w_less_season) + 
+  xlab("") + ylab("pCO2 (µatm)") +
+  ggtitle("Seawater pCO2 time series (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_pco2w_less_season <- as.data.frame(plot_ts_pco2w_less_season$data)
+
+model_ts_pco2w_less_season <- lm(formula=y~x, data=reg_val_ts_pco2w_less_season)
+summary(model_ts_pco2w_less_season) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_pco2w_less_season <- autoplot(ts_pco2w_less_season) + 
+  xlab("") + ylab("pCO2 (µatm)") +
+  ggtitle("Seawater pCO2 time series (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=590, label="slope : 5.18 ± 4.58-01 *", color="black")
+
+plot_ts_pco2w_less_season
+
+FFpCO2_w <- kendallSeasonalTrendTest(impute_pCO2_w ~ month(datetime) + year(datetime), data = data_somlit_surf)
+
+# pour pCO2 therm et non-therm :
+
+pco2_bio <- read_delim("../../Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+
+pco2_bio <- pco2_bio %>% 
+  mutate(Tmean = mean(impute_temp),
+         pCO2_w_mean = mean(impute_pCO2_w, na.rm = TRUE),
+         NpCO2 = impute_pCO2_w * exp(0.0423*(Tmean-impute_temp)),
+         TpCO2 = pCO2_w_mean * exp(0.0423*(impute_temp-Tmean)))
+
+FFpCO2_wtherm <- kendallSeasonalTrendTest(TpCO2 ~ month(datetime) + year(datetime), data = pco2_bio)
+
+FFpCO2_wnontherm <- kendallSeasonalTrendTest(NpCO2 ~ month(datetime) + year(datetime), data = pco2_bio)
+
+```
+
+### 50 m
+
+-   Temperature (°C)\
+-   Salinity\
+-   pH calculated\
+-   pH normalized (18 °C)\
+-   Total alcalinity (µmol/kg)\
+-   Total carbon - DIC (µmol/kg)
+-   Seawater pCO~2~ (µatm)
+
+#### By autocorrelation (decompose function)
+
+###### Temperature :
+
+```{r temperature - point b - autocorr - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+data_somlit_prof <- read_delim("../../Data/data_PointB/DATA_SOMLIT_07-22_impute_50m.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+
+#frequency : 365.25/7 = 52.17857
+ts_temp_50 <- ts(data_somlit_prof$impute_temp, start = c(2007,1), end = c(2022,52), freq = 52)
+
+#autoplot :
+autoplot_ts_temp_50 <- autoplot(ts_temp_50) +
+ggtitle('Temperature at 50 m (°C) at Point B - 2007-2022') +
+xlab('') +
+ylab('Temp. (°C')
+
+#creation data frame de ts_temp :
+df_ts_temp_50 <- as.data.frame(autoplot_ts_temp_50$data) %>% 
+  rename(DATE = x, TEMP = y)
+
+ts_temp_decomp_50 <- decompose(ts_temp_50, type = "additive") 
+autoplot(ts_temp_decomp_50) +
+  xlab(' ')
+
+#remove seasonality :
+ts_temp_less_season_50 <- ts_temp_decomp_50$x - ts_temp_decomp_50$seasonal
+
+plot_ts_temp_less_season_50 <- autoplot(ts_temp_less_season_50) + 
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_temp_less_season_50 <- as.data.frame(plot_ts_temp_less_season_50$data)
+
+model_ts_temp_less_season_50 <- lm(formula=y~x, data=reg_val_ts_temp_less_season_50)
+summary(model_ts_temp_less_season_50) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_temp_less_season_50 <- autoplot(ts_temp_less_season_50) + 
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series - 50m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=25, label="slope : 0.026 ± 0.007 *", color="black")
+
+plot_ts_temp_less_season_50
+
+#seasonal plot :
+seasonal_plot_ts_temp_50 <- ggseasonplot(ts_temp_50, year.labels = F, year.labels.left = F)
+
+#polar plot :
+polar_plot_50 <- ggseasonplot(ts_temp_50, polar = TRUE)
+
+
+autoplot_ts_temp_50
+seasonal_plot_ts_temp_50
+polar_plot_50
+
+FFtemp_50 <- kendallSeasonalTrendTest(impute_temp ~ month(datetime) + year(datetime), data = data_somlit_prof)
+FFtemp_50$estimate
+
+```
+
+###### Salinity :
+
+```{r salinity - point b - autocorr - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : salinity
+#frequency : 365.25/7 = 52.17857
+ts_sal_50 <- ts(data_somlit_prof$impute_sal, start = c(2007,1), end = c(2022,52), freq = 52)
+
+#seasonal plot :
+# seasonal_plot_ts_sal_50 <- ggseasonplot(ts_sal_50, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+# 
+# seasonal_plot_ts_sal_50
+# 
+# #correlograms :
+#  correlogram1 <- acf(ts_sal_50, type = "cor", lag.max = 600, plot = T)
+#  correlogram2 <- acf(ts_sal_50, type = "cor", lag.max = 55, plot = T)
+
+
+#type = additive because the seasonal pattern doesn't seem to increase in variation according to time
+ts_sal_decomp_50 <- decompose(ts_sal_50, type = "additive") 
+
+autoplot(ts_sal_decomp_50) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_sal_less_season_50 <- ts_sal_decomp_50$x - ts_sal_decomp_50$seasonal
+
+plot_ts_sal_less_season_50 <- autoplot(ts_sal_less_season_50) + 
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_sal_less_season_50 <- as.data.frame(plot_ts_sal_less_season_50$data)
+
+model_ts_sal_less_season_50 <- lm(formula=y~x, data=reg_val_ts_sal_less_season_50)
+summary(model_ts_sal_less_season_50) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_sal_less_season_50 <- autoplot(ts_sal_less_season_50) + 
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series - 50m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=36.5, label="slope : 0.01 ± 0.000820 *", color="black")
+
+plot_ts_sal_less_season_50
+
+FFsal_50 <- kendallSeasonalTrendTest(impute_sal ~ month(datetime) + year(datetime), data = data_somlit_prof)
+FFsal_50$estimate
+
+```
+
+###### pH calculated :
+
+```{r pH - point b - autocorr - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : pH calculated
+
+
+#frequency : 365.25/7 = 52.17857
+#arret data pH_calc au 2022-09-28 :
+ts_pH_50 <- ts(data_somlit_prof$pH_calc, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+# seasonal_plot_ts_pH_50 <- ggseasonplot(ts_pH_50, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+# 
+# seasonal_plot_ts_pH_50
+
+#correlograms :
+# correlogram1 <- acf(ts_pH_50, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_pH_50, type = "cor", lag.max = 55, plot = T)
+
+
+#type = additive because the seasonal pattern doesn't seem to increase in variation according to time
+ts_pH_decomp_50 <- decompose(ts_pH_50, type = "additive") 
+
+autoplot(ts_pH_decomp_50) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_pH_less_season_50 <- ts_pH_decomp_50$x - ts_pH_decomp_50$seasonal
+
+plot_ts_pH_less_season_50 <- autoplot(ts_pH_less_season_50) + 
+  xlab("") + ylab("pH calculated") +
+  ggtitle("pH time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_pH_less_season_50 <- as.data.frame(plot_ts_pH_less_season_50$data)
+
+model_ts_pH_less_season_50 <- lm(formula=y~x, data=reg_val_ts_pH_less_season_50)
+summary(model_ts_pH_less_season_50) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_pH_less_season_50 <- autoplot(ts_pH_less_season_50) + 
+  xlab("") + ylab("pH calculated") +
+  ggtitle("pH time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2017, y=8.17, label="slope : -0.003 ± 0.0001 *", color="black")
+
+plot_ts_pH_less_season_50
+
+FFpH_50 <- kendallSeasonalTrendTest(pH_calc ~ month(datetime) + year(datetime), data = data_somlit_prof)
+FFpH_50$estimate
+
+```
+
+###### pH normalized (18) :
+
+```{r pH(18) - point b - autocorr - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : pH 18
+
+
+#frequency : 365.25/7 = 52.17857
+#arret data pH_18 au 2022-09-28 :
+ts_pH_18_50 <- ts(data_somlit_prof$pH_18, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_pH_18_50 <- ggseasonplot(ts_pH_18_50, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_pH_18_50
+
+#correlograms :
+# correlogram1 <- acf(ts_pH_18_50, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_pH_18_50, type = "cor", lag.max = 55, plot = T)
+
+
+#type = additive because the seasonal pattern doesn't seem to increase in variation according to time
+ts_pH_18_decomp_50 <- decompose(ts_pH_18_50, type = "additive") 
+
+autoplot(ts_pH_18_decomp_50) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_pH_18_less_season_50 <- ts_pH_18_decomp_50$x - ts_pH_18_decomp_50$seasonal
+
+plot_ts_pH_18_less_season_50 <- autoplot(ts_pH_18_less_season_50) + 
+  xlab("") + ylab("pH calculated") +
+  ggtitle("pH (18) time series at 50 m(without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_pH_18_less_season_50 <- as.data.frame(plot_ts_pH_18_less_season_50$data)
+
+model_ts_pH_18_less_season_50 <- lm(formula=y~x, data=reg_val_ts_pH_18_less_season_50)
+summary(model_ts_pH_18_less_season_50) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_pH_18_less_season_50 <- autoplot(ts_pH_18_less_season_50) + 
+  xlab("") + ylab("pH (18)") +
+  ggtitle("pH normalized time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2017, y=8.13, label="slope : -0.003 ± 0.0001 *", color="black")
+
+plot_ts_pH_18_less_season_50
+
+FFpH_18_50 <- kendallSeasonalTrendTest(pH_18 ~ month(datetime) + year(datetime), data = data_somlit_prof)
+FFpH_18_50$estimate
+
+```
+
+###### Total alcalinity :
+
+```{r alcalinity - point b - autocorr - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : alcalinity
+#frequency : 365.25/7 = 52.17857
+ts_ta_50 <- ts(data_somlit_prof$impute_ta, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_ta_50 <- ggseasonplot(ts_ta_50, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_ta_50
+
+#correlograms :
+# correlogram1 <- acf(ts_ta_50, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_ta_50, type = "cor", lag.max = 55, plot = T)
+
+
+#type = additive because the seasonal pattern doesn't seem to increase in variation according to time
+ts_ta_decomp_50 <- decompose(ts_ta_50, type = "additive") 
+
+autoplot(ts_ta_decomp_50) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_ta_less_season_50 <- ts_ta_decomp_50$x - ts_ta_decomp_50$seasonal
+
+plot_ts_ta_less_season_50 <- autoplot(ts_ta_less_season_50) + 
+  xlab("") + ylab("AT (µmol/kg)") +
+  ggtitle("Total alcalinity time series at 50 m(without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_ta_less_season_50 <- as.data.frame(plot_ts_ta_less_season_50$data)
+
+model_ts_ta_less_season_50 <- lm(formula=y~x, data=reg_val_ts_ta_less_season_50)
+summary(model_ts_ta_less_season_50) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_ta_less_season_50 <- autoplot(ts_ta_less_season_50) + 
+  xlab("") + ylab("AT (µmol/kg)") +
+  ggtitle("Total alcalinity time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=2580, label="slope : 5.86e-01 ± 8.01e-02 *", color="black")
+
+plot_ts_ta_less_season_50
+
+FFta_50 <- kendallSeasonalTrendTest(impute_ta ~ month(datetime) + year(datetime), data = data_somlit_prof)
+FFta_50$estimate
+
+```
+
+###### Total carbon :
+
+```{r dic - point b - autocorr - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : dic
+#frequency : 365.25/7 = 52.17857
+ts_dic_50 <- ts(data_somlit_prof$impute_dic, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_dic_50 <- ggseasonplot(ts_dic_50, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_dic_50
+
+#correlograms :
+# correlogram1 <- acf(ts_dic_50, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_dic_50, type = "cor", lag.max = 55, plot = T)
+
+
+#type = multiplicative because the seasonal pattern seems to increase in variation according to time
+ts_dic_decomp_50 <- decompose(ts_dic_50, type = "multiplicative") 
+
+autoplot(ts_dic_decomp_50) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_dic_less_season_50 <- ts_dic_decomp_50$x - ts_dic_decomp_50$seasonal
+
+plot_ts_dic_less_season_50 <- autoplot(ts_dic_less_season_50) + 
+  xlab("") + ylab("Total carbon (µmol/kg)") +
+  ggtitle("DIC time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_dic_less_season_50 <- as.data.frame(plot_ts_dic_less_season_50$data)
+
+model_ts_dic_less_season_50 <- lm(formula=y~x, data=reg_val_ts_dic_less_season_50)
+summary(model_ts_dic_less_season_50) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_dic_less_season_50 <- autoplot(ts_dic_less_season_50) + 
+  xlab("") + ylab("Total carbon (µmol/kg)") +
+  ggtitle("DIC time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=2300, label="slope : 2.25 ± 0.14 *", color="black")
+
+plot_ts_dic_less_season_50
+
+FFdic_50 <- kendallSeasonalTrendTest(impute_dic ~ month(datetime) + year(datetime), data = data_somlit_prof)
+FFdic_50$estimate
+
+```
+
+###### Seawater pCO~2~
+
+```{r pco2 water - point b - autocorr - 50m, echo=FALSE, warning=FALSE, message=FALSE}
+
+#creation ts object : pco2 water
+#frequency : 365.25/7 = 52.17857
+ts_pco2w_50 <- ts(data_somlit_prof$impute_pco2_w, start = c(2007,1), end = c(2022,39), freq = 52)
+
+#seasonal plot :
+#seasonal_plot_ts_pco2w_50 <- ggseasonplot(ts_pco2w_50, year.labels = F, year.labels.left = F, col=terrain.colors(16))
+
+#seasonal_plot_ts_pco2w_50
+
+#correlograms :
+# correlogram1 <- acf(ts_pco2w_50, type = "cor", lag.max = 600, plot = T)
+# correlogram2 <- acf(ts_pco2w_50, type = "cor", lag.max = 55, plot = T)
+
+
+#type = multiplicative because the seasonal pattern seems to increase in variation according to time
+ts_pco2w_decomp_50 <- decompose(ts_pco2w_50, type = "multiplicative") 
+
+autoplot(ts_pco2w_decomp_50) +
+  xlab(' ')
+##
+
+#remove seasonality :
+
+ts_pco2w_less_season_50 <- ts_pco2w_decomp_50$x - ts_pco2w_decomp_50$seasonal
+
+plot_ts_pco2w_less_season_50 <- autoplot(ts_pco2w_less_season_50) + 
+  xlab("") + ylab("pCO2 (µatm)") +
+  ggtitle("Seawater pCO2 time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_pco2w_less_season_50 <- as.data.frame(plot_ts_pco2w_less_season_50$data)
+
+model_ts_pco2w_less_season_50 <- lm(formula=y~x, data=reg_val_ts_pco2w_less_season_50)
+summary(model_ts_pco2w_less_season_50) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_pco2w_less_season_50 <- autoplot(ts_pco2w_less_season_50) + 
+  xlab("") + ylab("pCO2 (µatm)") +
+  ggtitle("Seawater pCO2 time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=590, label="slope : 3.47 ± 0.14 *", color="black")
+
+plot_ts_pco2w_less_season_50
+
+FFpCO2w_50 <- kendallSeasonalTrendTest(impute_pco2_w ~ month(datetime) + year(datetime), data = data_somlit_prof)
+FFpCO2w_50$estimate
+
+```
+  
+  
+
+## Point B - period 1995-2022  
+  
+  
+### SURFACE  
+  
+###### Temperature :  
+  
+
+```{r Point B - period 1995-2022 - surface - temp, echo=FALSE, warning=FALSE, message=FALSE, fig.width=8, fig.height=4}
+
+PointB_9522_surf <- read_delim("../../Data/data_PointB/PointB_T_S_1995-2022_CLEAN_impute_0m.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+
+#frequency : 365.25/7 = 52.17857
+ts_temp_9522_surf <- ts(PointB_9522_surf$impute_temp, start = c(1995,1), end = c(2022,52), freq = 52)
+
+#autoplot :
+autoplot_ts_temp_9522_surf <- autoplot(ts_temp_9522_surf) +
+ggtitle('Temperature at surface (°C) at Point B - 1995-2022') +
+xlab('') +
+ylab('Temp. (°C')
+
+
+ts_temp_decomp_9522_surf <- decompose(ts_temp_9522_surf, type = "additive") 
+autoplot(ts_temp_decomp_9522_surf) +
+  xlab(' ')
+
+#remove seasonality :
+ts_temp_less_season_9522_surf <- ts_temp_decomp_9522_surf$x - ts_temp_decomp_9522_surf$seasonal
+
+plot_ts_temp_less_season_9522_surf <- autoplot(ts_temp_less_season_9522_surf) + 
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series at surface (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_temp_less_season_9522_surf <- as.data.frame(plot_ts_temp_less_season_9522_surf$data)
+
+model_ts_temp_less_season_9522_surf <- lm(formula=y~x, data=reg_val_ts_temp_less_season_9522_surf)
+summary(model_ts_temp_less_season_9522_surf) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_temp_less_season_9522_surf <- autoplot(ts_temp_less_season_9522_surf) + 
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series at surface (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=28, label="slope : 0.032 ± 0.01 *", color="black")
+
+plot_ts_temp_less_season_9522_surf
+
+#seasonal plot :
+seasonal_plot_ts_temp_9522_surf <- ggseasonplot(ts_temp_9522_surf, year.labels = F, year.labels.left = F)
+
+#polar plot :
+polar_plot_9522_surf <- ggseasonplot(ts_temp_9522_surf, polar = TRUE)
+
+
+autoplot_ts_temp_9522_surf
+seasonal_plot_ts_temp_9522_surf
+polar_plot_9522_surf
+
+FFtemp_9522_surf <- kendallSeasonalTrendTest(impute_temp ~ month(datetime) + year(datetime), data = PointB_9522_surf)
+
+
+```
+  
+  
+
+###### Salinity :  
+  
+
+```{r Point B - period 1995-2022 - surface - sal, echo=FALSE, warning=FALSE, message=FALSE}
+
+#frequency : 365.25/7 = 52.17857
+ts_sal_9522_surf <- ts(PointB_9522_surf$impute_sal, start = c(1995,1), end = c(2022,52), freq = 52)
+
+#autoplot :
+autoplot_ts_sal_9522_surf <- autoplot(ts_sal_9522_surf) +
+ggtitle('Salinity at surface at Point B - 1995-2022') +
+xlab('') +
+ylab('Salinity')
+
+
+ts_sal_decomp_9522_surf <- decompose(ts_sal_9522_surf, type = "additive") 
+autoplot(ts_sal_decomp_9522_surf) +
+  xlab(' ')
+
+#remove seasonality :
+ts_sal_less_season_9522_surf <- ts_sal_decomp_9522_surf$x - ts_sal_decomp_9522_surf$seasonal
+
+plot_ts_sal_less_season_9522_surf <- autoplot(ts_sal_less_season_9522_surf) + 
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series at surface (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_sal_less_season_9522_surf <- as.data.frame(plot_ts_sal_less_season_9522_surf$data)
+
+model_ts_sal_less_season_9522_surf <- lm(formula=y~x, data=reg_val_ts_sal_less_season_9522_surf)
+summary(model_ts_sal_less_season_9522_surf) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_sal_less_season_9522_surf <- autoplot(ts_sal_less_season_9522_surf) + 
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series at surface (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=35, label="slope : -0.001 ± 0.0009 (non-significative)", color="black")
+
+plot_ts_sal_less_season_9522_surf
+
+
+FFsal_9522_surf <- kendallSeasonalTrendTest(impute_sal ~ month(datetime) + year(datetime), data = PointB_9522_surf)
+
+```
+  
+  
+
+### DEPTH 50  
+  
+###### Temperature :  
+  
+
+```{r Point B - period 1995-2022 - 50m - temp, echo=FALSE, warning=FALSE, message=FALSE}
+
+PointB_9522_prof <- read_delim("../../Data/data_PointB/PointB_T_S_1995-2022_CLEAN_impute_50m.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+
+#frequency : 365.25/7 = 52.17857
+ts_temp_9522_prof <- ts(PointB_9522_prof$impute_temp, start = c(1995,1), end = c(2022,52), freq = 52)
+
+#autoplot :
+autoplot_ts_temp_9522_prof <- autoplot(ts_temp_9522_prof) +
+ggtitle('Temperature at 50 m (°C) at Point B - 1995-2022') +
+xlab('') +
+ylab('Temp. (°C')
+
+
+ts_temp_decomp_9522_prof <- decompose(ts_temp_9522_prof, type = "additive") 
+autoplot(ts_temp_decomp_9522_prof) +
+  xlab(' ')
+
+#remove seasonality :
+ts_temp_less_season_9522_prof <- ts_temp_decomp_9522_prof$x - ts_temp_decomp_9522_prof$seasonal
+
+plot_ts_temp_less_season_9522_prof <- autoplot(ts_temp_less_season_9522_prof) + 
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_temp_less_season_9522_prof <- as.data.frame(plot_ts_temp_less_season_9522_prof$data)
+
+model_ts_temp_less_season_9522_prof <- lm(formula=y~x, data=reg_val_ts_temp_less_season_9522_prof)
+summary(model_ts_temp_less_season_9522_prof) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_temp_less_season_9522_prof <- autoplot(ts_temp_less_season_9522_prof) + 
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=24, label="slope : 0.015 ± 0.006 *", color="black")
+
+plot_ts_temp_less_season_9522_prof
+
+#seasonal plot :
+seasonal_plot_ts_temp_9522_prof <- ggseasonplot(ts_temp_9522_prof, year.labels = F, year.labels.left = F)
+
+#polar plot :
+polar_plot_9522_prof <- ggseasonplot(ts_temp_9522_prof, polar = TRUE)
+
+
+autoplot_ts_temp_9522_prof
+seasonal_plot_ts_temp_9522_prof
+polar_plot_9522_prof
+
+FFtemp_9522_prof <- kendallSeasonalTrendTest(impute_temp ~ month(datetime) + year(datetime), data = PointB_9522_prof)
+
+```
+  
+  
+
+###### Salinity :  
+  
+
+```{r Point B - period 1995-2022 - 50m - sal, echo=FALSE, warning=FALSE, message=FALSE}
+
+#frequency : 365.25/7 = 52.17857
+ts_sal_9522_prof <- ts(PointB_9522_prof$impute_sal, start = c(1995,1), end = c(2022,52), freq = 52)
+
+#autoplot :
+autoplot_ts_sal_9522_prof <- autoplot(ts_sal_9522_prof) +
+  ggtitle("Salinity at 50 m at Point B - 1995-2022") + 
+  xlab("") + 
+  ylab("Salinity")
+
+
+ts_sal_decomp_9522_prof <- decompose(ts_sal_9522_prof, type = "additive") 
+autoplot(ts_sal_decomp_9522_prof) +
+  xlab("")
+
+#remove seasonality :
+ts_sal_less_season_9522_prof <- ts_sal_decomp_9522_prof$x - ts_sal_decomp_9522_prof$seasonal
+
+plot_ts_sal_less_season_9522_prof <- autoplot(ts_sal_less_season_9522_prof) + 
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_sal_less_season_9522_prof <- as.data.frame(plot_ts_sal_less_season_9522_prof$data)
+
+model_ts_sal_less_season_9522_prof <- lm(formula=y~x, data=reg_val_ts_sal_less_season_9522_prof)
+summary(model_ts_sal_less_season_9522_prof) #pour voir les erreurs des coef + la significativité
+
+
+#plot with slope value :
+plot_ts_sal_less_season_9522_prof <- autoplot(ts_sal_less_season_9522_prof) + 
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series at 50 m (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2010, y=35, label="slope : 0.00 ± 0.0005 *", color="black")
+
+plot_ts_sal_less_season_9522_prof
+
+
+FFsal_9522_prof <- kendallSeasonalTrendTest(impute_sal ~ month(datetime) + year(datetime), data = PointB_9522_prof)
+
+```
+  
+  
+
+## Seasonal Mann Kendall slopes :  
+  
+For temperature and *p*CO~2~ seawater at Point B (2007-2022)  
+  
+
+```{r seasonal_slopes, echo=FALSE, warning=FALSE, message=FALSE, fig.width=8,fig.height=6}
+
+seasonal_slopes_pco2w_surf <- as.data.frame(FFpCO2_w$seasonal.estimates) %>% 
+  dplyr::select(slope) %>% 
+  rename(pco2_slope = slope)
+
+seasonal_slopes_temp_surf_9522 <- as.data.frame(FFtemp_9522_surf$seasonal.estimates) %>% 
+  dplyr::select(slope) %>% 
+  rename(temp_slope = slope)
+
+seasonal_slopes_pco2_therm <- as.data.frame(FFpCO2_wtherm$seasonal.estimates) %>% 
+  dplyr::select(slope) %>% 
+  rename(pCO2_therm_slope = slope)
+
+seasonal_slopes_pco2_nontherm <- as.data.frame(FFpCO2_wnontherm$seasonal.estimates) %>% 
+  dplyr::select(slope) %>% 
+  rename(pCO2_nontherm_slope = slope)
+
+
+seasonal_slopes <- data.frame(ID = c(1:12), 
+                              Months = c("Jan", "Fev", "Mar", "Avr", "Mai", "Juin", 
+                                         "Juil", "Août", "Sept", "Oct", "Nov", "Dec"), 
+                              pco2_slope = seasonal_slopes_pco2w_surf$pco2_slope,
+                              temp_slope = seasonal_slopes_temp_surf_9522$temp_slope,
+                              pCO2_therm_slope = seasonal_slopes_pco2_therm$pCO2_therm_slope,
+                              pCO2_nontherm_slope = seasonal_slopes_pco2_nontherm$pCO2_nontherm_slope)
+
+seasonal_slopes[,c(2:6)]
+
+# seasonal_slopes_pco2w_surf %>% 
+#   ggplot() + 
+#   aes(x=c(1:12), y=slope) +
+#   geom_point(shape=1, size=3) +
+#   geom_line(linetype="dashed") +
+#   scale_x_discrete(name="", limits = c(1:12)) + 
+#   scale_y_continuous(name = "slope value", n.breaks = 10)
+
+
+
+plot1 <- seasonal_slopes %>% 
+  ggplot() +
+  aes(x=reorder(Months, ID), y=temp_slope) +
+  geom_bar(stat="identity", fill="lightgrey", color="red", width=0.8) +
+  scale_y_continuous(name=expression(paste("Valeur de la pente (°C ", an^-1,")")), n.breaks = 10) +
+  geom_hline(col = "#303030", yintercept = 0, linetype=1) +
+  scale_x_discrete(name="")
+
+plot2 <- seasonal_slopes %>% 
+  ggplot() +
+  aes(x=reorder(Months, ID), y=pco2_slope) +
+  geom_bar(stat="identity", fill="lightgrey", color="#357AB7", width=0.8) +
+  scale_y_continuous(name=expression(paste("Valeur de la pente (", mu, "atm ", an^-1,")")), n.breaks = 10) +
+  geom_hline(col = "#303030", yintercept = 0, linetype=1) +
+  scale_x_discrete(name="")
+
+plot3 <- seasonal_slopes %>% 
+  ggplot() +
+  aes(x=reorder(Months, ID), y=pCO2_therm_slope) +
+  geom_bar(stat="identity", fill="lightgrey", color="#CC5500", width=0.8) +
+  scale_y_continuous(name=expression(paste("Valeur de la pente (", mu, "atm ", an^-1,")")), n.breaks = 10) +
+  geom_hline(col = "#303030", yintercept = 0, linetype=1) +
+  scale_x_discrete(name="")
+
+plot4 <- seasonal_slopes %>% 
+  ggplot() +
+  aes(x=reorder(Months, ID), y=pCO2_nontherm_slope) +
+  geom_bar(stat="identity", fill="lightgrey", color="#660099", width=0.8) +
+  scale_y_continuous(name=expression(paste("Valeur de la pente (", mu, "atm ", an^-1,")")), n.breaks = 10) +
+  geom_hline(col = "#303030", yintercept = 0, linetype=1) +
+  scale_x_discrete(name="")
+
+
+plot_grid(plot1, plot3, plot2, plot4, align='vh', ncol=2)
+
+
+```
