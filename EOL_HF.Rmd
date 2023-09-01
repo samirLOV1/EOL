@@ -1,0 +1,449 @@
+---
+title: "EOL_HF"
+author: "samir"
+date: '`r format(Sys.time(), "%d %B %Y %H:%M")`'
+
+output:
+    rmdformats::robobook:
+     self_contained: true
+     thumbnails: false
+     lightbox: true
+     gallery: true
+     highlight: pygments
+---
+
+```{r libraries, echo=FALSE, warning=FALSE, message=FALSE}
+
+library("readr")
+library("viridis")
+library("scales")
+library("lubridate")
+library("gsignal")
+library("FactoMineR")
+library("factoextra")
+library("gplots")
+library("heatwaveR")
+library("dplyr")
+library("imputeTS")
+library("Metrics")
+library("tidyr")
+library("tseries")
+library("forecast")
+library("tsDyn")
+library("tsoutliers")
+library("seacarb")
+library("lmodel2")
+library("lmtest")
+library("ggExtra")
+library("corrplot")
+library("ggcorrplot")
+library("marelac")
+library("spectral")
+library("signal")
+library("cowplot")
+library("kableExtra")
+library("EnvStats")
+
+```
+
+```{r importation Data EOL raw, echo=FALSE, warning=FALSE, message=FALSE}
+
+#period : septembre 2013-octobre 2022
+EOL_RAW <- read_delim("./Data/data_EOL/EOL_raw_13-23.csv", 
+    delim = ",", escape_double = FALSE, trim_ws = TRUE)  
+
+EOL_RAW <- EOL_RAW %>% 
+  rename(temperature = temp_eol_c, salinity = sal_eol_psu, oxygen = oxy_umol_kg) %>% 
+  unite(col = "datetime","datetime", "hour", sep = " ", remove = TRUE)
+EOL_RAW$datetime <- dmy_hms(EOL_RAW$datetime) 
+
+EOL_RAW <- EOL_RAW %>% 
+  dplyr::filter(datetime >= "2018-01-01 00:00:00" & datetime <= "2022-12-31 23:59:59")
+
+```
+
+```{r importation data SOMLIT clean, echo=FALSE, message=FALSE, warning=FALSE}
+#period : jan. 2007 - dec. 2022
+SOMLIT <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_CLEAN.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+
+#selection data surface 1m 
+SOMLIT <- SOMLIT %>% 
+  dplyr::filter(depth == 0) %>% 
+  rename(datetime=sampling_date, temp_SOM = temperature, sal_SOM = salinity) %>% 
+  dplyr::select(datetime, temp_SOM, sal_SOM) %>% 
+  mutate(datetime = as.character(datetime))
+
+```
+
+# Data EOL: temperature (°C), salinity and oxygen (µmol kg^-1^)
+  
+```{r visualisation data EOL, echo=FALSE, warning=FALSE, message=FALSE, fig.width=9,fig.height=5}
+
+# calcul OSAT (ml/kg) + calcul AOU EOL umol/kg :
+EOL_RAW <- EOL_RAW %>% 
+  mutate(T1 = (temperature + 273.15) / 100,
+         OSAT = exp((((-173.9894) + 255.5907/T1 + 146.4813*log(T1) - 22.2040*T1)) + salinity * (-0.037362 + T1 * (0.016504 - 0.0020564 * T1))),
+         AOU = OSAT - oxygen)
+
+#neg_AOU_EOL = EOL_RAW$oxygen - OSAT
+
+plot_EOL_RAW_temp <- EOL_RAW %>% 
+  ggplot() +
+  aes(x=datetime, y=temperature) +
+  geom_line() +
+  scale_x_datetime(name="", date_labels = "%d-%Y") +
+  scale_y_continuous(name="Temperature (°C)")
+
+plot_EOL_RAW_sal <- EOL_RAW %>% 
+  ggplot() +
+  aes(x=datetime, y=salinity) +
+  geom_line() +
+  scale_x_datetime(name="", date_labels = "%d-%Y") +
+  scale_y_continuous(name="Salinity")
+
+plot_EOL_RAW_oxy <- EOL_RAW %>% 
+  ggplot() +
+  aes(x=datetime, y=oxygen) +
+  geom_line() +
+  scale_x_datetime(name="", date_labels = "%d-%Y") +
+  scale_y_continuous(name=expression(paste("Oxygen (μmol ", kg^-1, ")")))
+
+plot_EOL_RAW_AOU <- EOL_RAW %>% 
+  ggplot() +
+  aes(x=datetime, y=AOU) +
+  geom_line() +
+  scale_x_datetime(name="", date_labels = "%d-%Y") +
+  scale_y_continuous(name=expression(paste("AOU (μmol ", kg^-1, ")")))
+
+ plot_grid(plot_EOL_RAW_temp, 
+            plot_EOL_RAW_sal,
+            plot_EOL_RAW_oxy,
+            plot_EOL_RAW_AOU,
+            align='vh', ncol=2)
+
+```
+
+# January 2018 - December 2022 - Temperature and Salinity
+*By autocorrelation + decompose function or Mann-Kendall : not possible because of gaps*  
+  
+```{r calcul monthly means - temperature & salinity, echo=FALSE, warning=FALSE, message=FALSE}
+
+monthly_means <- ungroup(EOL_RAW) %>% 
+  #mutate(Month = format(datetime, format="%m")) %>% 
+  group_by(Month) %>%
+  summarise(
+    sal_month = mean(salinity, na.rm = TRUE),
+    sd_sal = sd(salinity, na.rm = TRUE),
+    temp_month = mean(temperature, na.rm = TRUE),
+    sd_temp = sd(temperature, na.rm = TRUE),
+    oxy_month = mean(oxygen, na.rm = TRUE),
+    sd_oxy = sd(oxygen, na.rm= TRUE),
+    aou_month = mean(AOU, na.rm = TRUE),
+    sd_aou = sd(AOU, na.rm= TRUE))
+```
+
+```{r regression analysis - temperature & salinity, echo=FALSE, warning=FALSE, message=FALSE}
+
+anomalies_EOL_1 <- left_join(ungroup(EOL_RAW), monthly_means, by = "Month") %>%
+  mutate(sal_ano = salinity - sal_month,
+         temp_ano = temperature - temp_month,
+         oxy_ano = oxygen - oxy_month,
+         aou_ano = AOU - aou_month)
+
+# Regression and table anomalies
+var_list <- c("sal_ano", "temp_ano")
+
+lms <- lapply(var_list, function(x) {
+  summary(lm(substitute(i ~ decimal_date(datetime), list(i = as.name(x))), 
+             data = anomalies_EOL_1))
+})
+reg_raw <- NULL
+for (i in 1:length(var_list)) {
+  #one loops through all anomalies
+  # calculate probability of fstatistic because it cannot be extracted from lms above
+  # see http://stats.stackexchange.com/questions/92824/extracting-the-model-p-value-for-a-multiple-regression-in-r
+  # slope returned by lm is per second
+  prob <-
+    pf(lms[[i]]$fstatistic[1],
+       lms[[i]]$fstatistic[2],
+       lms[[i]]$fstatistic[3],
+       lower.tail = FALSE)
+  reg_raw <-
+    rbind(reg_raw, as.numeric(
+      c(
+        lms[[i]]$coefficients[2, 1],
+        lms[[i]]$coefficients[2, 2],
+        lms[[i]]$coefficients[2, 4],
+        lms[[i]]$coefficients[1, 1],
+        lms[[i]]$coefficients[1, 2],
+        lms[[i]]$coefficients[1, 4],
+        lms[[i]]$fstatistic[1],
+        lms[[i]]$fstatistic[3],
+        lms[[i]]$r.squared,
+        prob
+      )
+    ))
+}
+colnames(reg_raw) <-
+  c("Slope",
+    "SE Slope",
+    "P Slope",
+    "Intercept",
+    "SE int.",
+    "P int.",
+    "F",
+    "df",
+    "R2",
+    "P value")
+
+row.names(reg_raw) <- var_list
+reg_anomalies_raw <- reg_raw
+reg_anomalies_raw
+
+##RAPPORT##
+# reg_anomalies_raw_rapport <- as.data.frame(reg_anomalies_raw)
+# reg_anomalies_raw_rapport <- reg_anomalies_raw_rapport %>% 
+#   mutate(Variables = c("T (°C)", "S"))
+# 
+# reg_anomalies_raw_rapport <- reg_anomalies_raw_rapport %>% 
+#   mutate( 
+#   `Pente ± sd` = paste(round(reg_anomalies_raw_rapport$Slope, digits=3), "±", round(reg_anomalies_raw_rapport$`SE Slope`, digits=4)), 
+#   `P pente` = reg_anomalies_raw_rapport$`P Slope`, 
+#   `Int. ± sd` = paste(round(reg_anomalies_raw_rapport$Intercept, digits=2), "±", round(reg_anomalies_raw_rapport$`SE int.`, digits=2)),
+#   `P Int.` = reg_anomalies_raw_rapport$`P int.`, 
+#   `R^2^` = round(reg_anomalies_raw_rapport$R2, digits=4))
+# 
+# 
+# reg_anomalies_raw_rapport <- reg_anomalies_raw_rapport[,c(11:16)]
+# 
+# kable(reg_anomalies_raw_rapport, caption="Time series anomaly regression analyses (EOL)", format = "pipe", align='l')
+
+```
+
+## Temperature
+
+```{r EOL 1 - plot anomalies + trends - temperature, echo=FALSE, warning=FALSE, message=FALSE}
+
+plot_ano_temp_EOL_1 <- ggplot(data = anomalies_EOL_1, aes(x = datetime, y = temp_ano), na.rm=TRUE) +
+  #scale_x_datetime(date_breaks="2 year", date_minor_breaks="1 years", labels = date_format("%Y")) +
+  geom_point(colour="blue", na.rm=TRUE, size=0.65) +
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="EOL - Temperature anomalies + trend (2018-2022 hourly)",x="", y="Temperature (°C)") 
+  #annotate(geom="text", x=as.POSIXct("2015-12-03 01:00:00"), y=1, label="slope : 0.0020 ± 0.0017 (non-significative)", color="black")
+
+plot_temp_EOL_1 <- EOL_RAW %>%
+  ggplot() +
+  aes(x=datetime, y=temperature) +
+  geom_point(size=1) +
+  #scale_x_datetime(name="") +
+  scale_y_continuous(name="Temperature (°C)") +
+  ggtitle("EOL time series observations of temperature (2018-2022 hourly)")
+
+plot_temp_EOL_1
+plot_ano_temp_EOL_1
+
+```
+
+## Salinity
+
+```{r EOL 1 - plot anomalies + trends - salinity, echo=FALSE, warning=FALSE, message=FALSE}
+
+plot_ano_sal_EOL_1 <- ggplot(data = anomalies_EOL_1, aes(x = datetime, y = sal_ano), na.rm=TRUE) +
+  #scale_x_datetime(date_breaks="2 year", date_minor_breaks="1 years", labels = date_format("%Y")) +
+  geom_point(colour="blue", na.rm=TRUE, size=0.65) +
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="EOL - Salinity anomalies + trend (2018-2022 hourly)",x="", y="Salinity") 
+  #annotate(geom="text", x=as.POSIXct("2015-12-03 01:00:00"), y=1, label="slope : 0.0020 ± 0.0017 (non-significative)", color="black")
+
+plot_sal_EOL_1 <- EOL_RAW %>%
+  ggplot() +
+  aes(x=datetime, y=salinity) +
+  geom_point(size=1) +
+  #scale_x_datetime(name="") +
+  scale_y_continuous(name="Salinity") +
+  ggtitle("EOL time series observations of salinity (2018-2022 hourly)")
+
+plot_sal_EOL_1
+plot_ano_sal_EOL_1
+
+```
+## Oxygen 
+
+```{r EOL 3 - plot anomalies + trends - oxygen, echo=FALSE, warning=FALSE, message=FALSE}
+
+plot_ano_oxy_EOL_1 <- ggplot(data = anomalies_EOL_1, aes(x = datetime, y = oxy_ano), na.rm=TRUE) +
+  #scale_x_datetime() +
+  geom_point(colour="blue", na.rm=TRUE, size=0.65) + 
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="EOL - Oxygen anomalies + trend (2018-2022, hourly)",x="", y=expression(paste("Oxygen (μmol ", kg^-1, ")")))
+  #annotate(geom="text", x=as.POSIXct("2019-03-16 01:00:00"), y=5, label="slope : -0.019 ± 0.004 *", color="black")
+  
+plot_oxy_EOL_1 <- EOL_RAW %>% 
+  ggplot() +
+  aes(x=datetime, y=oxygen) + 
+  geom_point(size=1) +
+  #scale_x_datetime(name="") +
+  scale_y_continuous(name=expression(paste("Oxygen (μmol ", kg^-1, ")"))) +
+  ggtitle("EOL time series observations of oxygen (°C) 2018-2022 (Hourly)")
+
+plot_oxy_EOL_1
+plot_ano_oxy_EOL_1
+```
+## AOU 
+
+```{r EOL 3 - plot anomalies + trends - AOU, echo=FALSE, warning=FALSE, message=FALSE}
+
+plot_ano_AOU_EOL_1 <- ggplot(data = anomalies_EOL_1, aes(x = datetime, y = aou_ano), na.rm=TRUE) +
+  #scale_x_datetime() +
+  geom_point(colour="blue", na.rm=TRUE, size=0.65) + 
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="EOL - AOU anomalies + trend (2018-2022, hourly)",x="", y=expression(paste("AOU (μmol ", kg^-1, ")")))
+  #annotate(geom="text", x=as.POSIXct("2019-03-16 01:00:00"), y=5, label="slope : -0.019 ± 0.004 *", color="black")
+  
+plot_AOU_EOL_1 <- EOL_RAW %>% 
+  ggplot() +
+  aes(x=datetime, y=AOU) + 
+  geom_point(size=1) +
+  #scale_x_datetime(name="") +
+  scale_y_continuous(name=expression(paste("Oxygen (μmol ", kg^-1, ")"))) +
+  ggtitle("EOL time series observations of AOU 2018-2022 (Hourly)")
+
+plot_AOU_EOL_1
+plot_ano_AOU_EOL_1
+```
+
+## Daily dataset (8AM-10AM from January 2018 to December 2022) - Temperature and Salinity
+
+Missing values :
+- april 2019
+
+```{r importation Data EOL 2 - daily, echo=FALSE, warning=FALSE, message=FALSE}
+
+# Modifier en partant du fichier EOL_raw
+EOL_daily <- read_delim("./Data/data_EOL/EOL_13-23_1perday_morning.csv",
+    delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
+  rename(temperature=temp_eol_c, salinity=sal_eol_psu) %>%
+  mutate(datetime = as.POSIXct(datetime)) %>%
+  dplyr::filter(datetime >= "2018-01-01 00:00:00" & datetime <= "2022-12-31 23:59:00")
+
+```
+
+```{r EOL 2 - calcul monthly means - temperature & salinity, echo=TRUE, warning=FALSE, message=FALSE}
+
+monthly_means_EOL2 <- ungroup(EOL_daily) %>%
+  mutate(Month = format(datetime, format="%m")) %>%
+  group_by(Month) %>%
+  summarise(
+    sal_month = mean(salinity, na.rm = TRUE),
+    temp_month = mean(temperature, na.rm = TRUE))
+
+monthly_means_EOL2
+
+```
+
+```{r EOL 2 - regression analysis - temperature & salinity, echo=FALSE, warning=FALSE, message=FALSE}
+
+anomalies_EOL_2 <- left_join(ungroup(EOL_daily), monthly_means_EOL2, by = "Month") %>%
+  mutate(sal_ano = salinity - sal_month,
+         temp_ano = temperature - temp_month)
+
+# Regression and table anomalies
+var_list <-
+  c(
+    "sal_ano",
+    "temp_ano")
+
+lms <- lapply(var_list, function(x) {
+  summary(lm(substitute(i ~ decimal_date(datetime), list(i = as.name(x))),
+             data = anomalies_EOL_2))
+})
+reg_EOL_2 <- NULL
+for (i in 1:length(var_list)) {
+  #one loops through all anomalies
+  # calculate probability of fstatistic because it cannot be extracted from lms above
+  # see http://stats.stackexchange.com/questions/92824/extracting-the-model-p-value-for-a-multiple-regression-in-r
+  # slope returned by lm is per second
+  prob <-
+    pf(lms[[i]]$fstatistic[1],
+       lms[[i]]$fstatistic[2],
+       lms[[i]]$fstatistic[3],
+       lower.tail = FALSE)
+  reg_EOL_2 <-
+    rbind(reg_EOL_2, as.numeric(
+      c(
+        lms[[i]]$coefficients[2, 1],
+        lms[[i]]$coefficients[2, 2],
+        lms[[i]]$coefficients[2, 4],
+        lms[[i]]$coefficients[1, 1],
+        lms[[i]]$coefficients[1, 2],
+        lms[[i]]$coefficients[1, 4],
+        lms[[i]]$fstatistic[1],
+        lms[[i]]$fstatistic[3],
+        lms[[i]]$r.squared,
+        prob
+      )
+    ))
+}
+colnames(reg_EOL_2) <-
+  c("Slope",
+    "SE Slope",
+    "P Slope",
+    "Intercept",
+    "SE int.",
+    "P int.",
+    "F",
+    "df",
+    "R2",
+    "P value")
+
+row.names(reg_EOL_2) <- var_list
+reg_anomalies_EOL_2 <- reg_EOL_2
+
+reg_anomalies_EOL_2
+
+```
+## Temperature
+
+```{r EOL 2 - plot anomalies + trends - temperature, echo=FALSE, warning=FALSE, message=FALSE}
+plot_ano_temp_EOL_2 <- ggplot(data = anomalies_EOL_2, aes(x = datetime, y = temp_ano), na.rm=TRUE) +
+  scale_x_datetime(date_breaks="2 year", date_minor_breaks="1 years", labels = date_format("%Y")) +
+  geom_point(colour="blue", na.rm=TRUE, size=0.65) +
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="EOL - Temperature anomalies + trend (2018-2022, daily)",x="", y="Temperature (°C)")+ annotate(geom="text", x=as.POSIXct("2019-12-03 01:00:00"), y=5, label="slope : -0.012 ± 0.020 (non-significative: P 5.6e-01", color="black")
+
+plot_temp_EOL_2 <- EOL_daily %>%
+  ggplot() +
+  aes(x=datetime, y=temperature) +
+  geom_point(size=1) +
+  scale_x_datetime(name="") +
+  scale_y_continuous(name="Temperature (°C)") +
+  ggtitle("EOL time series observations of temperature (°C) 2018-2022, daily)")
+
+plot_temp_EOL_2
+plot_ano_temp_EOL_2
+```
+
+## Salinity
+
+```{r EOL 2 - plot anomalies + trends - salinity, echo=FALSE, warning=FALSE, message=FALSE}
+
+plot_ano_sal_EOL_2 <- ggplot(data = anomalies_EOL_2, aes(x = datetime, y = sal_ano), na.rm=TRUE) +
+  scale_x_datetime(date_breaks="2 year", date_minor_breaks="1 years", labels = date_format("%Y")) +
+  geom_point(colour="blue", na.rm=TRUE, size=0.65) +
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="EOL - Salinity anomalies + trend (2018-2022, daily)",x="", y="Salinity") +
+  annotate(geom="text", x=as.POSIXct("2019-12-03 01:00:00"), y=1, label="slope : 0.017 ± 0.003 (significative: P 5.5e-07)", color="black")
+
+plot_sal_EOL_2 <- EOL_daily %>%
+  ggplot() +
+  aes(x=datetime, y=salinity) +
+  geom_point(size=1) +
+  scale_x_datetime(name="") +
+  scale_y_continuous(name="Salinity") +
+  ggtitle("EOL time series observations of salinity (2018-2022, daily)")
+
+plot_sal_EOL_2
+plot_ano_sal_EOL_2
+
+```
