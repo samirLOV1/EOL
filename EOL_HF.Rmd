@@ -71,8 +71,8 @@ SOMLIT <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_CLEAN.csv",
 SOMLIT <- SOMLIT %>% 
   dplyr::filter(depth == 0) %>% 
   rename(datetime=sampling_date, temp_SOM = temperature, sal_SOM = salinity) %>% 
-  dplyr::select(datetime, temp_SOM, sal_SOM) %>% 
-  mutate(datetime = as.character(datetime))
+  dplyr::select(datetime, temp_SOM, sal_SOM)
+SOMLIT$datetime <- ymd(SOMLIT$datetime)
 
 ```
 
@@ -268,6 +268,7 @@ plot_sal_EOL_1
 plot_ano_sal_EOL_1
 
 ```
+
 ## Oxygen 
 
 ```{r EOL 3 - plot anomalies + trends - oxygen, echo=FALSE, warning=FALSE, message=FALSE}
@@ -290,6 +291,7 @@ plot_oxy_EOL_1 <- EOL_RAW %>%
 plot_oxy_EOL_1
 plot_ano_oxy_EOL_1
 ```
+
 ## AOU 
 
 ```{r EOL 3 - plot anomalies + trends - AOU, echo=FALSE, warning=FALSE, message=FALSE}
@@ -446,4 +448,172 @@ plot_sal_EOL_2 <- EOL_daily %>%
 plot_sal_EOL_2
 plot_ano_sal_EOL_2
 
+```
+
+### Filling gaps - Moving average - Mann Kendall : Temperature (2018-2022)
+
+## Temperature
+
+```{r moving average & mann kendall EOL temp, echo=FALSE, warning=FALSE, message=FALSE}
+
+# data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
+#     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
+#   dplyr::filter(datetime >= "2014-01-07") %>%
+#   mutate(Month = format(datetime, format="%m"))
+
+#Transfome data into TS, frequency : 365.25/7 = 52.17857
+ts_temp_eol <- ts(EOL_RAW$temperature, start = c(2018,1), end = c(2022,52), freq = 52)
+
+# look at the NA in the ts before filling
+ggplot_na_distribution(x= EOL_RAW$temperature, x_axis_labels= EOL_RAW$datetime )
+
+# No gaps to be filled
+
+ 
+#decompose on filled data : ts_seadec
+ts_temp_eol_decomp <- decompose(ts_temp_eol, type = "additive")
+
+autoplot(ts_temp_eol_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_temp_eol_less_season <- ts_temp_eol_decomp$x - ts_temp_eol_decomp$seasonal
+
+plot_ts_temp_eol_less_season <- autoplot(ts_temp_eol_less_season) +
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series at Pt B (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_temp_eol_less_season <- as.data.frame(plot_ts_temp_eol_less_season$data)
+
+model_ts_temp_less_season <- lm(formula=y~x, data=reg_val_ts_temp_eol_less_season)
+summary(model_ts_temp_less_season)
+
+
+#plot with slope value :
+plot_ts_temp_eol_less_season <- autoplot(ts_temp_eol_less_season) +
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series at Pt B (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=2021, y=14.5, label="slope :  -0.10 ± 0.003 (significative, P <2e-16)", color="black")
+
+plot_ts_temp_eol_less_season
+
+FFtemp_eol <- kendallSeasonalTrendTest(temperature ~ month(datetime) + year(datetime), data = EOL_RAW)
+FFtemp_eol$estimate
+
+```
+
+
+## Salinity
+
+```{r moving average & mann kendall EOL sal, echo=FALSE, warning=FALSE, message=FALSE}
+
+# data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
+#     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
+#   dplyr::filter(datetime >= "2014-01-07") %>%
+#   mutate(Month = format(datetime, format="%m"))
+
+#Transfome data into TS, frequency : 365.25/7 = 52.17857
+ts_sal_eol <- ts(EOL_RAW$salinity, start = c(2018,1), end = c(2022,52), freq = 52)
+
+# look at the NA in the ts before filling
+ggplot_na_distribution(x= EOL_RAW$salinity, x_axis_labels= EOL_RAW$datetime )
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_sal <-  na_seadec(EOL_RAW$salinity, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = EOL_RAW$salinity,
+                          x_with_imputations = ts_seadec_sal,
+                          color_imputations = "gold")
+
+#decompose on filled data : ts_seadec_sal
+ts_sal_eol_decomp <- decompose(ts_seadec_sal, type = "additive")
+
+autoplot(ts_sal_eol_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_sal_eol_less_season <- ts_sal_eol_decomp$x - ts_sal_eol_decomp$seasonal
+
+plot_ts_sal_eol_less_season <- autoplot(ts_sal_eol_less_season) +
+  xlab("") + ylab("Sal") +
+  ggtitle("Salinity time series at EOL (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_sal_eol_less_season <- as.data.frame(plot_ts_sal_eol_less_season$data)
+
+model_ts_sal_less_season <- lm(formula=y~x, data=reg_val_ts_sal_eol_less_season)
+summary(model_ts_sal_less_season)
+
+
+#plot with slope value :
+plot_ts_sal_eol_less_season <- autoplot(ts_sal_eol_less_season) +
+  xlab("") + ylab("Sal (°C)") +
+  ggtitle("Salinity time series at EOL (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=1200, y=38.5, label="slope :  0.0001 ± 0.000002 (significative, P <2e-16)", color="black")
+
+plot_ts_sal_eol_less_season
+
+FFsal_eol <- kendallSeasonalTrendTest(salinity ~ month(datetime) + year(datetime), data = EOL_RAW)
+FFsal_eol$estimate
+```
+
+## Oxygen
+
+```{r moving average & mann kendall EOL oxy, echo=FALSE, warning=FALSE, message=FALSE}
+
+# data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
+#     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
+#   dplyr::filter(datetime >= "2014-01-07") %>%
+#   mutate(Month = format(datetime, format="%m"))
+
+#Transfome data into TS, frequency : 365.25/7 = 52.17857
+ts_oxy_eol <- ts(EOL_RAW$oxygen, start = c(2018,1), end = c(2022,52), freq = 52)
+
+# look at the NA in the ts before filling
+ggplot_na_distribution(x= EOL_RAW$oxygen, x_axis_labels= EOL_RAW$datetime )
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_oxy <-  na_seadec(EOL_RAW$oxygen, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = EOL_RAW$oxygen,
+                          x_with_imputations = ts_seadec_oxy,
+                          color_imputations = "gold")
+
+#decompose on filled data : ts_seadec_oxy
+ts_oxy_eol_decomp <- decompose(ts_seadec_oxy, type = "additive")
+
+autoplot(ts_oxy_eol_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_oxy_eol_less_season <- ts_oxy_eol_decomp$x - ts_oxy_eol_decomp$seasonal
+
+plot_ts_oxy_eol_less_season <- autoplot(ts_oxy_eol_less_season) +
+  xlab("") + ylab("oxy") +
+  ggtitle("Oxygen time series at EOL (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_oxy_eol_less_season <- as.data.frame(plot_ts_oxy_eol_less_season$data)
+
+model_ts_oxy_less_season <- lm(formula=y~x, data=reg_val_ts_oxy_eol_less_season)
+summary(model_ts_oxy_less_season)
+
+
+#plot with slope value :
+plot_ts_oxy_eol_less_season <- autoplot(ts_oxy_eol_less_season) +
+  xlab("") + ylab("oxy (°C)") +
+  ggtitle("Oxygen time series at EOL (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=1200, y=150, label="slope :  -0.0079 ± 0.00018 (significative, P <2e-16)", color="black")
+
+plot_ts_oxy_eol_less_season
+
+FFoxy_eol <- kendallSeasonalTrendTest(oxygen ~ month(datetime) + year(datetime), data = EOL_RAW)
+FFoxy_eol$estimate
 ```
