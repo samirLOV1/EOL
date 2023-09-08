@@ -76,13 +76,15 @@ SOMLIT$datetime <- ymd(SOMLIT$datetime)
 
 ```
 
-# EOL: Raw data: January 2018 to December 2022
+# EOL Raw data: January 2018 to December 2022
 
-Gaps: 
+Gaps:
+
 - 21 Mar to 17 May 2019.
 - 22 to 24 Nov 2022
 
 NAs:
+
 - No NAs for T
 - NAs for S, O, AOU
   
@@ -397,6 +399,7 @@ plot_ano_sal_EOL_day <- ggplot(data = anomalies_EOL_day, aes(x = datetime, y = s
 
 plot_ano_sal_EOL_day
 ```
+
 ### Oxygen
 
 ```{r EOL day - plot anomalies + trends - oxygen, echo=FALSE, warning=FALSE, message=FALSE}
@@ -423,6 +426,9 @@ plot_ano_AOU_EOL_day <- ggplot(data = anomalies_EOL_day, aes(x = datetime, y = a
 
 plot_ano_AOU_EOL_month
 ```
+
+Results from anomaly methods (month and day) are similars with a slight improvement in SD.
+
 
 <!-- ## Daily dataset (8AM-10AM from January 2018 to December 2022) - Temperature and Salinity -->
 
@@ -559,12 +565,17 @@ plot_ano_AOU_EOL_month
 
 <!-- ``` -->
 
-## Filling gaps - Moving average - Mann Kendall
+# Other methods:
 
 **By autocorrelation + decompose function or Mann-Kendall : not possible because of gaps**
--> Filling gaps.
 
-## Temperature
+--> Filling gaps.
+
+## Moving average
+
+### Temperature
+
+No gaps to fill.
 
 ```{r moving average EOL temp, echo=FALSE, warning=FALSE, message=FALSE}
 
@@ -621,9 +632,12 @@ plot_ts_temp_eol_less_season <- autoplot(ts_temp_eol_less_season) +
 #regression values :
 reg_val_ts_temp_eol_less_season <- as.data.frame(plot_ts_temp_eol_less_season$data)
 
+# Pour faire la regresssion en secondes, mettre datetime en x et non pas les années decimales.
+#reg_val_ts_temp_eol_less_season$datetime <- EOL_RAW$datetime
+#names(reg_val_ts_temp_eol_less_season) <- c("value", "datetime")
+
 model_ts_temp_less_season <- lm(formula=y~x, data=reg_val_ts_temp_eol_less_season)
 summary(model_ts_temp_less_season)
-
 
 #plot with slope value :
 plot_ts_temp_eol_less_season <- autoplot(ts_temp_eol_less_season) +
@@ -635,25 +649,12 @@ plot_ts_temp_eol_less_season <- autoplot(ts_temp_eol_less_season) +
 plot_ts_temp_eol_less_season
 ```
 
-Mann-Kendall results:
+Slope is `r round(model_ts_temp_less_season$coefficients[[2]],3)`. Means that periode of 5 years is not suitable. Slope not reliable.
 
-```{r mann kendall EOL temp, echo=FALSE, warning=FALSE, message=FALSE}
-FFtemp_eol <- kendallSeasonalTrendTest(temperature ~ month(datetime) + year(datetime), data = EOL_RAW)
-FFtemp_eol$estimate
-```
-
-
-## Salinity
+### Salinity
 
 ```{r moving average EOL sal, echo=FALSE, warning=FALSE, message=FALSE}
-
-# data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
-#     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
-#   dplyr::filter(datetime >= "2014-01-07") %>%
-#   mutate(Month = format(datetime, format="%m"))
-
-#Transfome data into TS, frequency : 365.25/7 = 52.17857
-ts_sal_eol <- ts(EOL_RAW$salinity, start = c(2018,1), end = c(2022,52), freq = 52)
+ts_sal_eol <- ts(EOL_RAW$salinity, freq = 8766)
 
 # look at the NA in the ts before filling
 ggplot_na_distribution(x= EOL_RAW$salinity, x_axis_labels= EOL_RAW$datetime )
@@ -685,7 +686,6 @@ reg_val_ts_sal_eol_less_season <- as.data.frame(plot_ts_sal_eol_less_season$data
 model_ts_sal_less_season <- lm(formula=y~x, data=reg_val_ts_sal_eol_less_season)
 summary(model_ts_sal_less_season)
 
-
 #plot with slope value :
 plot_ts_sal_eol_less_season <- autoplot(ts_sal_eol_less_season) +
   xlab("") + ylab("Sal (°C)") +
@@ -696,25 +696,13 @@ plot_ts_sal_eol_less_season <- autoplot(ts_sal_eol_less_season) +
 plot_ts_sal_eol_less_season
 ```
 
-Mann-Kendall results:
+Slope is `r round(model_ts_sal_less_season$coefficients[[2]],3)`. Means that periode of 5 years is not suitable. Slope not reliable.
 
-```{r mann kendall EOL sal, echo=FALSE, warning=FALSE, message=FALSE}
-
-FFsal_eol <- kendallSeasonalTrendTest(salinity ~ month(datetime) + year(datetime), data = EOL_RAW)
-FFsal_eol$estimate
-```
-
-## Oxygen
+### Oxygen
 
 ```{r moving average EOL oxy, echo=FALSE, warning=FALSE, message=FALSE}
 
-# data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
-#     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
-#   dplyr::filter(datetime >= "2014-01-07") %>%
-#   mutate(Month = format(datetime, format="%m"))
-
-#Transfome data into TS, frequency : 365.25/7 = 52.17857
-ts_oxy_eol <- ts(EOL_RAW$oxygen, start = c(2018,1), end = c(2022,52), freq = 52)
+ts_oxy_eol <- ts(EOL_RAW$oxygen, freq = 8766)
 
 # look at the NA in the ts before filling
 ggplot_na_distribution(x= EOL_RAW$oxygen, x_axis_labels= EOL_RAW$datetime )
@@ -756,11 +744,104 @@ plot_ts_oxy_eol_less_season <- autoplot(ts_oxy_eol_less_season) +
 
 plot_ts_oxy_eol_less_season
 ```
+Slope is `r round(model_ts_oxy_less_season$coefficients[[2]],3)`. Means that periode of 5 years is not suitable. Slope not reliable.
 
-Mann-Kendall results:
+### AOU
+
+```{r moving average EOL aou, echo=FALSE, warning=FALSE, message=FALSE}
+
+ts_aou_eol <- ts(EOL_RAW$AOU, freq = 8766)
+
+# look at the NA in the ts before filling
+ggplot_na_distribution(x= EOL_RAW$AOU, x_axis_labels= EOL_RAW$datetime )
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_aou <-  na_seadec(EOL_RAW$AOU, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = EOL_RAW$AOU,
+                          x_with_imputations = ts_seadec_aou,
+                          color_imputations = "gold")
+
+#decompose on filled data : ts_seadec_aou
+ts_aou_eol_decomp <- decompose(ts_seadec_aou, type = "additive")
+
+autoplot(ts_aou_eol_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_aou_eol_less_season <- ts_aou_eol_decomp$x - ts_aou_eol_decomp$seasonal
+
+plot_ts_aou_eol_less_season <- autoplot(ts_aou_eol_less_season) +
+  xlab("") + ylab("aou") +
+  ggtitle("AOU time series at EOL (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_aou_eol_less_season <- as.data.frame(plot_ts_aou_eol_less_season$data)
+
+model_ts_aou_less_season <- lm(formula=y~x, data=reg_val_ts_aou_eol_less_season)
+summary(model_ts_aou_less_season)
+
+
+#plot with slope value :
+plot_ts_aou_eol_less_season <- autoplot(ts_aou_eol_less_season) +
+  xlab("") + ylab("aou (°C)") +
+  ggtitle("AOU time series at EOL (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=1200, y=150, label="slope :  -0.0079 ± 0.00018 (significative, P <2e-16)", color="black")
+
+plot_ts_aou_eol_less_season
+```
+
+Slope is `r round(model_ts_aou_less_season$coefficients[[2]],3)`. Means that periode of 5 years is not suitable. Slope not reliable.
+
+## Mann-Kendall
+
+- The function kendall.SeasonalTrendTest returns estimated values of Kendall's τ, the slope, and the intercept for each season, as well as a single estimate for each of these three quantities combined over all seasons. The overall estimate of τ is the weighted average of the p seasonal τ's
+
+- The overall estimate of slope is the median of all two-point slopes computed within each season.
+
+- The overall estimate of intercept is the median of the p seasonal estimates of intercept.
+
+--------
+
+- The Kendall Tau, or Kendall rank correlation coefficient, measures the monotony of the slope. Kendall's Tau varies between -1 and 1; it is positive when the trend increases and negative when the trend decreases.
+
+- The Sen slope, which estimates the overall slope of the time series. This slope corresponds to the median of all the slopes calculated between each pair of points in the series.
+
+- The significance, which represents the threshold for which the hypothesis that there is no trend is accepted. The trend is statistically significant when the p-value is less than 0.05.
+
+Results:
+
+### Temperature
+
+```{r mann kendall EOL temp, echo=FALSE, warning=FALSE, message=FALSE}
+FFtemp_eol <- kendallSeasonalTrendTest(temperature ~ month(datetime) + year(datetime), data = EOL_RAW)
+FFtemp_eol$estimate
+```
+
+### Salinity
+
+```{r mann kendall EOL sal, echo=FALSE, warning=FALSE, message=FALSE}
+
+FFsal_eol <- kendallSeasonalTrendTest(salinity ~ month(datetime) + year(datetime), data = EOL_RAW)
+FFsal_eol$estimate
+```
+
+### Oxygen
 
 ```{r mann kendall EOL oxy, echo=FALSE, warning=FALSE, message=FALSE}
 
 FFoxy_eol <- kendallSeasonalTrendTest(oxygen ~ month(datetime) + year(datetime), data = EOL_RAW)
 FFoxy_eol$estimate
 ```
+
+### AOU
+
+```{r mann kendall EOL aou, echo=FALSE, warning=FALSE, message=FALSE}
+
+FFaou_eol <- kendallSeasonalTrendTest(AOU ~ month(datetime) + year(datetime), data = EOL_RAW)
+FFaou_eol$estimate
+```
+
+Results from Mann-Kendall and anomalies (by day) are similars.
