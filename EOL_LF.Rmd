@@ -1,0 +1,64 @@
+---
+title: "EOL_LF"
+author: "samir"
+date: "2023-09-04"
+output: html_document
+---
+
+## Temperature
+
+```{r moving average & mann kendall PtB - 2014, echo=FALSE, warning=FALSE, message=FALSE}
+
+# data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
+#     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
+#   dplyr::filter(datetime >= "2014-01-07") %>%
+#   mutate(Month = format(datetime, format="%m"))
+
+#Transfome data into TS, frequency : 365.25/7 = 52.17857
+ts_temp_som <- ts(SOMLIT$temp_SOM, start = c(2018,1), end = c(2022,52), freq = 52)
+
+# look at the NA in the ts before filling
+ggplot_na_distribution(ts_temp_som )
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec <-  na_seadec(ts_temp_som, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = ts_temp_som,
+                          x_with_imputations = ts_seadec,
+                          color_imputations = "gold")
+ 
+ 
+#decompose on filled data : ts_seadec
+ts_temp_som_decomp <- decompose(ts_seadec, type = "additive")
+
+autoplot(ts_temp_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_temp_som_less_season <- ts_temp_som_decomp$x - ts_temp_som_decomp$seasonal
+
+plot_ts_temp_som_less_season <- autoplot(ts_temp_som_less_season) +
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series at Pt B (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_temp_som_less_season <- as.data.frame(plot_ts_temp_som_less_season$data)
+
+model_ts_temp_less_season <- lm(formula=y~x, data=reg_val_ts_temp_som_less_season)
+summary(model_ts_temp_less_season)
+
+
+#plot with slope value :
+plot_ts_temp_som_less_season <- autoplot(ts_temp_som_less_season) +
+  xlab("") + ylab("Temp. (°C)") +
+  ggtitle("Temperature time series at Pt B (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=4, y=24, label="slope :  0.01 ± 0.075 (non-significative)", color="black")
+
+plot_ts_temp_som_less_season
+
+FFtemp_som <- kendallSeasonalTrendTest(temp_SOM ~ month(datetime) + year(datetime), data = SOMLIT)
+FFtemp_som$estimate
+
+```
