@@ -62,20 +62,6 @@ EOL_RAW <- EOL_RAW %>%
 
 ```
 
-```{r importation data SOMLIT clean, echo=FALSE, message=FALSE, warning=FALSE}
-#period : jan. 2007 - dec. 2022
-SOMLIT <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_CLEAN.csv", 
-    delim = ";", escape_double = FALSE, trim_ws = TRUE)
-
-#selection data surface 1m 
-SOMLIT <- SOMLIT %>% 
-  dplyr::filter(depth == 0) %>% 
-  rename(datetime=sampling_date, temp_SOM = temperature, sal_SOM = salinity) %>% 
-  dplyr::select(datetime, temp_SOM, sal_SOM)
-SOMLIT$datetime <- ymd(SOMLIT$datetime)
-
-```
-
 # EOL Raw data: January 2018 to December 2022
 
 Gaps:
