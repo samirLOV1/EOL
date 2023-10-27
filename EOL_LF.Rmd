@@ -80,6 +80,10 @@ SOMLIT_pcO2 <- SOMLIT_pcO2 %>%
   mutate(pCO2_atmos = as.numeric(pCO2_atmos))
 
 
+# test filling date with complete()
+test <- SOMLIT_pcO2 %>% complete(datetime = seq.Date(min(datetime), max(datetime), by="week"))
+test2 <- SOMLIT_pcO2 %>% complete(datetime )
+
 #ggplot_na_gapsize(SOMLIT_pcO2$pCO2_atmos)
 
 
@@ -105,26 +109,68 @@ SOMLIT_pcO2 <- SOMLIT_pcO2 %>%
 
 
 
+# Other methods:
+
+**By autocorrelation + decompose function or Mann-Kendall : not possible because of gaps**
+
+--> Filling gaps.
 
 
-
-```{r importation data SOMLIT clean, echo=FALSE, message=FALSE, warning=FALSE}
+```{r importation data DATA DIC + Oxy , echo=FALSE, message=FALSE, warning=FALSE}
 #period : jan. 2007 - dec. 2022
-SOMLIT <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_CLEAN.csv", 
+datadic <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m_deltas_pCO2_and_fluxes_CO2.csv", 
     delim = ";", escape_double = FALSE, trim_ws = TRUE)
+datadic <- datadic %>%
+  rename(pH_spec_insitu=pH_insi, pH_spec_25 = pH_s_somlit_temp_25) %>% 
+  dplyr::select(-c("Year", "Month", "Year.Month"))
+datadic$datetime <- dmy(datadic$datetime)
 
-#selection data surface 1m 
-SOMLIT <- SOMLIT %>% 
-  dplyr::filter(depth == 0) %>% 
-  rename(datetime=sampling_date, temp_SOM = temperature, sal_SOM = salinity) %>% 
-  dplyr::select(datetime, temp_SOM, sal_SOM)
-SOMLIT$datetime <- ymd(SOMLIT$datetime)
+datadic2007_2009 <- read_delim("./Data/data_PointB/SOMLIT_MAJ_Samir.csv", 
+    delim = ",", escape_double = FALSE, trim_ws = TRUE)
+datadic2007_2009 <- datadic2007_2009 %>%
+  rename(datetime=sampling_date) %>% 
+  dplyr::filter(depth == 1 & datetime < "2009-01-01") %>% 
+           dplyr::select(-c("depth", "CSC_flag"))
+datadic2007_2009$datetime <- ymd(datadic2007_2009$datetime)
+# bind
+datadic <- bind_rows(datadic, datadic2007_2009)
+datadic <- dplyr::arrange(datadic,datetime)
+
+
+# Add Somlit data OXY...
+oxy <- read_delim("./Data/data_PointB/DATA_SOMLIT_02-22_oxy_CLEAN_impute_0m_AOU.csv", 
+    delim = ";", escape_double = FALSE, trim_ws = TRUE)
+oxy$datetime <- as.Date(oxy$datetime)
+
+datadic <- left_join(datadic, oxy %>% dplyr::select(-c("PROF_NUM")), by="datetime")
+
+ datadic <- datadic %>% 
+  complete(datetime = seq.Date(min(datetime), max(datetime), by="week"))
+
+# Add NA row with missing weeks (missing tuesdays). After we have to filter because it added row on a week where data was already there but on mondays or wednesday...
+ datadic <-  datadic %>% 
+   arrange(datetime) %>%
+  mutate(diff_decale = datetime - lag(datetime, default = first(datetime)),
+         diff_day=as.numeric(lead(datetime,default = last(datetime))-datetime)) %>% 
+  select(diff_day, diff_decale, everything())
+
+ datadic<- datadic[!( datadic$diff_day=="1" &  datadic$diff_decale=="7"),]
+ datadic<- datadic[!( datadic$diff_day=="7" &  datadic$diff_decale=="1"),]
+ datadic<- datadic[!( datadic$diff_day=="2" &  datadic$diff_decale=="7"),]
+ datadic<- datadic[!( datadic$diff_day=="3" &  datadic$diff_decale=="7"),]
+
+ datadic<- datadic %>% 
+  dplyr::filter((datetime!="2011-11-08" &  datetime!="2011-11-01"& datetime!="2009-11-03"& datetime!="2020-09-08"& datetime!="2007-05-08"& datetime!="2012-05-01"& datetime!="2013-01-01"& datetime!="2013-11-26"& datetime!="2014-11-04"& datetime!="2014-11-11"& datetime!="2016-11-01"& datetime!="2018-01-09"& datetime!="2018-01-16"& datetime!="2018-03-13"& datetime!="2018-05-08"& datetime!="2020-02-11"& datetime!="2020-09-08" & datetime!="2008-09-23" & datetime!= "2009-01-20"& datetime!= "2012-05-08")) %>% 
+  dplyr::distinct(datetime, .keep_all = TRUE)
+   dplyr::filter( datetime!="2011-12-27"& diff_day=="7")
 
 ```
 
-## Temperature
+## Moving average
 
-```{r moving average & mann kendall PtB - 2014, echo=FALSE, warning=FALSE, message=FALSE}
+### Temperature
+
+```{r moving average & mann kendall PtB - 2014 T, echo=FALSE, warning=FALSE, message=FALSE}
 
 # data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
 #     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
@@ -132,7 +178,8 @@ SOMLIT$datetime <- ymd(SOMLIT$datetime)
 #   mutate(Month = format(datetime, format="%m"))
 
 #Transfome data into TS, frequency : 365.25/7 = 52.17857
-ts_temp_som <- ts(SOMLIT$temp_SOM, start = c(2018,1), end = c(2022,52), freq = 52)
+#ts_temp_som <- ts(SOMLIT$temp_SOM, start = c(2018,1), end = c(2022,52), freq = 52)
+ts_temp_som <- ts(SOMLIT$temperature, freq = 52)
 
 # look at the NA in the ts before filling
 ggplot_na_distribution(ts_temp_som )
@@ -171,11 +218,146 @@ plot_ts_temp_som_less_season <- autoplot(ts_temp_som_less_season) +
   xlab("") + ylab("Temp. (°C)") +
   ggtitle("Temperature time series at Pt B (without seasonality)") +
   geom_smooth(method=lm) +
-  annotate(geom="text", x=4, y=24, label="slope :  0.01 ± 0.075 (non-significative)", color="black")
+  annotate(geom="text", x=5, y=24, label="slope :  0.06 ± 0.014 (P = 2.99e-06, significative)", color="black")
 
 plot_ts_temp_som_less_season
+```
 
+Slope is `r round(model_ts_temp_less_season$coefficients[[2]],3)`.
+
+### Salinity
+
+```{r moving average & mann kendall PtB - 2014 S, echo=FALSE, warning=FALSE, message=FALSE}
+
+# data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
+#     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
+#   dplyr::filter(datetime >= "2014-01-07") %>%
+#   mutate(Month = format(datetime, format="%m"))
+
+#Transfome data into TS, frequency : 365.25/7 = 52.17857
+ts_sal_som <- ts(SOMLIT$salinity, freq = 52)
+
+# look at the NA in the ts before filling
+ggplot_na_distribution(ts_sal_som )
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec <-  na_seadec(ts_sal_som, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = ts_sal_som,
+                          x_with_imputations = ts_seadec,
+                          color_imputations = "gold")
+ 
+ 
+#decompose on filled data : ts_seadec
+ts_sal_som_decomp <- decompose(ts_seadec, type = "additive")
+
+autoplot(ts_sal_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_sal_som_less_season <- ts_sal_som_decomp$x - ts_sal_som_decomp$seasonal
+
+plot_ts_sal_som_less_season <- autoplot(ts_sal_som_less_season) +
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series at Pt B (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_sal_som_less_season <- as.data.frame(plot_ts_sal_som_less_season$data)
+
+model_ts_sal_less_season <- lm(formula=y~x, data=reg_val_ts_sal_som_less_season)
+summary(model_ts_sal_less_season)
+
+
+#plot with slope value :
+plot_ts_sal_som_less_season <- autoplot(ts_sal_som_less_season) +
+  xlab("") + ylab("Salinity (°C)") +
+  ggtitle("Salinity time series at Pt B (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=10, y=36, label="slope :  -0.0002 ± 0.002 (P = 0.9, non-significative)", color="black")
+
+plot_ts_sal_som_less_season
+```
+
+Slope is `r round(model_ts_sal_less_season$coefficients[[2]],3)`.
+
+### Salinity
+
+```{r moving average & mann kendall PtB - 2014 S, echo=FALSE, warning=FALSE, message=FALSE}
+
+# data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
+#     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
+#   dplyr::filter(datetime >= "2014-01-07") %>%
+#   mutate(Month = format(datetime, format="%m"))
+
+#Transfome data into TS, frequency : 365.25/7 = 52.17857
+ts_sal_som <- ts(SOMLIT$salinity, freq = 52)
+
+# look at the NA in the ts before filling
+ggplot_na_distribution(ts_sal_som )
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec <-  na_seadec(ts_sal_som, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = ts_sal_som,
+                          x_with_imputations = ts_seadec,
+                          color_imputations = "gold")
+ 
+ 
+#decompose on filled data : ts_seadec
+ts_sal_som_decomp <- decompose(ts_seadec, type = "additive")
+
+autoplot(ts_sal_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_sal_som_less_season <- ts_sal_som_decomp$x - ts_sal_som_decomp$seasonal
+
+plot_ts_sal_som_less_season <- autoplot(ts_sal_som_less_season) +
+  xlab("") + ylab("Salinity") +
+  ggtitle("Salinity time series at Pt B (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_sal_som_less_season <- as.data.frame(plot_ts_sal_som_less_season$data)
+
+model_ts_sal_less_season <- lm(formula=y~x, data=reg_val_ts_sal_som_less_season)
+summary(model_ts_sal_less_season)
+
+
+#plot with slope value :
+plot_ts_sal_som_less_season <- autoplot(ts_sal_som_less_season) +
+  xlab("") + ylab("Salinity (°C)") +
+  ggtitle("Salinity time series at Pt B (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=10, y=36, label="slope :  -0.0002 ± 0.002 (P = 0.9, non-significative)", color="black")
+
+plot_ts_sal_som_less_season
+```
+
+Slope is `r round(model_ts_sal_less_season$coefficients[[2]],3)`.
+
+## Mann-Kendall
+
+- The function kendall.SeasonalTrendTest returns estimated values of Kendall's τ, the slope, and the intercept for each season, as well as a single estimate for each of these three quantities combined over all seasons. The overall estimate of τ is the weighted average of the p seasonal τ's
+
+- The overall estimate of slope is the median of all two-point slopes computed within each season.
+
+- The overall estimate of intercept is the median of the p seasonal estimates of intercept.
+
+--------
+
+- The Kendall Tau, or Kendall rank correlation coefficient, measures the monotony of the slope. Kendall's Tau varies between -1 and 1; it is positive when the trend increases and negative when the trend decreases.
+
+- The Sen slope, which estimates the overall slope of the time series. This slope corresponds to the median of all the slopes calculated between each pair of points in the series.
+
+- The significance, which represents the threshold for which the hypothesis that there is no trend is accepted. The trend is statistically significant when the p-value is less than 0.05.
+
+Results:
+
+### Temperature
+
+```{r mann kendall EOL temp, echo=FALSE, warning=FALSE, message=FALSE}
 FFtemp_som <- kendallSeasonalTrendTest(temp_SOM ~ month(datetime) + year(datetime), data = SOMLIT)
 FFtemp_som$estimate
-
 ```
