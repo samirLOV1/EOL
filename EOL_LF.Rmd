@@ -36,85 +36,70 @@ library("signal")
 library("cowplot")
 library("kableExtra")
 library("EnvStats")
-
+library(xts)
+library(dygraphs)
 ```
 
-# Point B : surface (2007-2022) 
-  
-Utilisation of : na_seadec() function  
-= Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.  
-  
-  
-## Temperature & salinity
+<!-- # Point B : surface (2007-2022)  -->
 
-```{r interpolation temp & salinity, echo=FALSE, warning=FALSE, message=FALSE, fig.width=7,fig.height=5}
-
-SOMLIT_pcO2 <- read_delim("./Data/Data_PointB/DATA_SOMLIT_07-22_impute_0m.csv", 
-    delim = ";", escape_double = FALSE, trim_ws = TRUE) %>% 
-  dplyr::filter(datetime <= "2022-12-31")
-
-impute_temp <- na_seadec(SOMLIT_pcO2$temperature, algorithm = "interpolation", find_frequency = F)
-impute_sal <- na_seadec(SOMLIT_pcO2$salinity, algorithm = "interpolation", find_frequency = F)
-
-# plot 
-ggplot_na_imputations(x_with_na = SOMLIT_pcO2$temperature,
-                          x_with_imputations = impute_temp,
-                          color_imputations = "gold")
+<!-- Utilisation of : na_seadec() function   -->
+<!-- = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.   -->
 
 
-SOMLIT_pcO2$temperature[is.na(SOMLIT_pcO2$pCO2_atmos)] <- "NA"
+<!-- ## Temperature & salinity -->
 
-SOMLIT_pcO2 %>% 
-  dplyr::filter(temperature == "NA") %>% 
-  dplyr::group_by(Year) %>% 
-  dplyr::summarise(number_of_NA = n()) %>% 
-  ggplot(aes(x = Year, y = number_of_NA))  +
-  geom_segment(aes(x = Year, xend = Year, y = 0, yend = number_of_NA), 
-               color = "grey", linewidth = 2) +
-  geom_point(size = 5, fill = "#689D71", shape = 21, color = "black") +
-  coord_flip() +
-  scale_y_continuous(name = "Nombre de données manquantes", limits = c(0,15), breaks = seq(0, 15, 1)) + 
-  scale_x_discrete(name="", limits=c("2007":"2021"))
+<!-- ```{r interpolation temp & salinity, echo=FALSE, warning=FALSE, message=FALSE, fig.width=7,fig.height=5} -->
 
-SOMLIT_pcO2 <- SOMLIT_pcO2 %>% 
-  mutate(pCO2_atmos = as.numeric(pCO2_atmos))
+<!-- SOMLIT_pcO2 <- read_delim("./Data/Data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",  -->
+<!--     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%  -->
+<!--   dplyr::filter(datetime <= "2022-12-31") -->
 
+<!-- impute_temp <- na_seadec(SOMLIT_pcO2$temperature, algorithm = "interpolation", find_frequency = F) -->
+<!-- impute_sal <- na_seadec(SOMLIT_pcO2$salinity, algorithm = "interpolation", find_frequency = F) -->
 
-# test filling date with complete()
-test <- SOMLIT_pcO2 %>% complete(datetime = seq.Date(min(datetime), max(datetime), by="week"))
-test2 <- SOMLIT_pcO2 %>% complete(datetime )
-
-#ggplot_na_gapsize(SOMLIT_pcO2$pCO2_atmos)
+<!-- # plot  -->
+<!-- ggplot_na_imputations(x_with_na = SOMLIT_pcO2$temperature, -->
+<!--                           x_with_imputations = impute_temp, -->
+<!--                           color_imputations = "gold") -->
 
 
-# ggplot_na_imputations(SOMLIT_pcO2$pCO2_atmos, SOMLIT_pcO2$impute_pCO2_atmos, x_axis_labels = SOMLIT_pcO2$datetime, xlab = "", 
-#                       ylab=expression(paste(italic(p), CO[2], " atmosphérique ", "(atm)")), 
-#                       title="", color_lines = "lightslategray",
-#                       color_points = "steelblue", size_points = 1.2, size_imputations = 1.7) +
-#   scale_x_date(date_breaks = "2 years", date_labels = "%Y") 
-#   
+<!-- SOMLIT_pcO2$temperature[is.na(SOMLIT_pcO2$pCO2_atmos)] <- "NA" -->
+
+<!-- SOMLIT_pcO2 %>%  -->
+<!--   dplyr::filter(temperature == "NA") %>%  -->
+<!--   dplyr::group_by(Year) %>%  -->
+<!--   dplyr::summarise(number_of_NA = n()) %>%  -->
+<!--   ggplot(aes(x = Year, y = number_of_NA))  + -->
+<!--   geom_segment(aes(x = Year, xend = Year, y = 0, yend = number_of_NA),  -->
+<!--                color = "grey", linewidth = 2) + -->
+<!--   geom_point(size = 5, fill = "#689D71", shape = 21, color = "black") + -->
+<!--   coord_flip() + -->
+<!--   scale_y_continuous(name = "Nombre de données manquantes T", limits = c(0,15), breaks = seq(0, 15, 1)) +  -->
+<!--   scale_x_discrete(name="", limits=c("2007":"2021")) -->
+
+<!-- SOMLIT_pcO2 <- SOMLIT_pcO2 %>%  -->
+<!--   mutate(pCO2_atmos = as.numeric(pCO2_atmos)) -->
 
 
+<!-- # test filling date with complete() -->
+<!-- test <- SOMLIT_pcO2 %>% complete(datetime = seq.Date(min(datetime), max(datetime), by="week")) -->
+<!-- test2 <- SOMLIT_pcO2 %>% complete(datetime ) -->
 
-```
+<!-- #ggplot_na_gapsize(SOMLIT_pcO2$pCO2_atmos) -->
+
+
+<!-- # ggplot_na_imputations(SOMLIT_pcO2$pCO2_atmos, SOMLIT_pcO2$impute_pCO2_atmos, x_axis_labels = SOMLIT_pcO2$datetime, xlab = "",  -->
+<!-- #                       ylab=expression(paste(italic(p), CO[2], " atmosphérique ", "(atm)")),  -->
+<!-- #                       title="", color_lines = "lightslategray", -->
+<!-- #                       color_points = "steelblue", size_points = 1.2, size_imputations = 1.7) + -->
+<!-- #   scale_x_date(date_breaks = "2 years", date_labels = "%Y")  -->
+<!-- #    -->
 
 
 
+<!-- ``` -->
 
-
-
-
-
-
-
-
-
-# Other methods:
-
-**By autocorrelation + decompose function or Mann-Kendall : not possible because of gaps**
-
---> Filling gaps.
-
+# Data
 
 ```{r importation data DATA DIC + Oxy , echo=FALSE, message=FALSE, warning=FALSE}
 #period : jan. 2007 - dec. 2022
@@ -161,16 +146,216 @@ datadic <- left_join(datadic, oxy %>% dplyr::select(-c("PROF_NUM")), by="datetim
 
  datadic<- datadic %>% 
   dplyr::filter((datetime!="2011-11-08" &  datetime!="2011-11-01"& datetime!="2009-11-03"& datetime!="2020-09-08"& datetime!="2007-05-08"& datetime!="2012-05-01"& datetime!="2013-01-01"& datetime!="2013-11-26"& datetime!="2014-11-04"& datetime!="2014-11-11"& datetime!="2016-11-01"& datetime!="2018-01-09"& datetime!="2018-01-16"& datetime!="2018-03-13"& datetime!="2018-05-08"& datetime!="2020-02-11"& datetime!="2020-09-08" & datetime!="2008-09-23" & datetime!= "2009-01-20"& datetime!= "2012-05-08")) %>% 
-  dplyr::distinct(datetime, .keep_all = TRUE)
-   dplyr::filter( datetime!="2011-12-27"& diff_day=="7")
+  dplyr::distinct(datetime, .keep_all = TRUE) %>% 
+   rename(pH_spec_insi= pH_s_somlit_temp_insi)
+
+ # fill with outpu_somlit because pH is not full
+ output_somlit <- read_delim("../PointB-git/output_jp/data/output_somlit.csv", 
+    delim = ",", escape_double = FALSE, trim_ws = TRUE)
+  output_somlit <- output_somlit %>% 
+    dplyr::filter(depth ==0) %>% 
+    dplyr::rename(datetime=sampling_date)
+  
+  # remove pH_spec_25 and pH_spec_insitu from SOMLIT because not full. MErge them from output_somlit.
+  datadic <- datadic %>% 
+    select(-c(pH_spec_25, pH_spec_insi, pH_insi))
+ datadic <- left_join(datadic, output_somlit %>% dplyr::select(datetime, pH_spec_25), by="datetime")
+ 
+SOMLIT<- datadic
+
+#Plot
+ diff_xts <- dplyr::select(SOMLIT, datetime, pH_spec_25,pH_spec_insitu,pH_18,pH_calc)
+diff_xts <- as.xts(diff_xts, order.by=diff_xts$datetime)
+dygraph(diff_xts, main = "", ylab = "") %>%
+  dySeries("pH_spec_25", drawPoints = TRUE, color = "blue" ,pointSize=2, label = "pH_spec_25")%>%
+  dySeries("pH_spec_insitu", drawPoints = TRUE, color = "cyan", pointSize=2, label = "pH_spec_insitu")%>%
+    dySeries("pH_18", drawPoints = TRUE, color = "darkblue", pointSize=2, label = "pH_18")%>%
+  dySeries("pH_calc", drawPoints = TRUE, color = "orange", pointSize=2, label = "pH_calc")%>%
+dyOptions(drawGrid = TRUE,
+    drawPoints = TRUE,
+    useDataTimezone = TRUE)%>%
+  dyRangeSelector(height = 30)
+
+ diff_xts <- dplyr::select(SOMLIT, datetime, NpCO2,TpCO2,pCO2,pCO2_w)
+diff_xts <- as.xts(diff_xts, order.by=diff_xts$datetime)
+dygraph(diff_xts, main = "", ylab = "") %>%
+  dySeries("pCO2", drawPoints = TRUE, color = "blue" ,pointSize=2, label = "pCO2")%>%
+  dySeries("pCO2_w", drawPoints = TRUE, color = "cyan", pointSize=2, label = "pCO2_w")%>%
+    dySeries("NpCO2", drawPoints = TRUE, color = "darkblue", pointSize=2, label = "NpCO2")%>%
+  dySeries("TpCO2", drawPoints = TRUE, color = "orange", pointSize=2, label = "TpCO2")%>%
+dyOptions(drawGrid = TRUE,
+    drawPoints = TRUE,
+    useDataTimezone = TRUE)%>%
+  dyRangeSelector(height = 30)
+
+ diff_xts <- dplyr::select(SOMLIT, datetime, ta,dic)
+diff_xts <- as.xts(diff_xts, order.by=diff_xts$datetime)
+dygraph(diff_xts, main = "", ylab = "") %>%
+  dySeries("ta", drawPoints = TRUE, color = "blue" ,pointSize=2, label = "ta")%>%
+  dySeries("dic", drawPoints = TRUE, color = "red", pointSize=2, label = "dic")%>%
+dyOptions(drawGrid = TRUE,
+    drawPoints = TRUE,
+    useDataTimezone = TRUE)%>%
+  dyRangeSelector(height = 30)
+```
+
+
+# Anomalies method
+
+## By months
+  
+```{r calcul monthly means, echo=FALSE, warning=FALSE, message=FALSE}
+monthly_means <- ungroup(SOMLIT) %>% 
+  #mutate(Month = format(datetime, format="%m")) %>% 
+  group_by(month) %>%
+  summarise(
+    sal_month = mean(salinity, na.rm = TRUE),
+    sd_sal = sd(salinity, na.rm = TRUE),
+    temp_month = mean(temperature, na.rm = TRUE),
+    sd_temp = sd(temperature, na.rm = TRUE),
+    oxy_month = mean(oxy_umol_kg, na.rm = TRUE),
+    sd_oxy = sd(oxy_umol_kg, na.rm= TRUE),
+    aou_month = mean(AOU, na.rm = TRUE),
+    sd_aou = sd(AOU, na.rm= TRUE),
+    ta_month = mean(ta, na.rm = TRUE),
+    sd_ta = sd(ta, na.rm= TRUE),
+    dic_month = mean(dic, na.rm = TRUE),
+    sd_dic = sd(dic, na.rm= TRUE),
+    phinsi_month = mean(pH_spec_insitu, na.rm = TRUE),
+    sd_phinsi = sd(pH_spec_insitu, na.rm= TRUE),
+     phspec25_month = mean(pH_spec_25, na.rm = TRUE),
+    sd_phspec25 = sd(pH_spec_25, na.rm= TRUE), 
+    npco2_month = mean(NpCO2, na.rm = TRUE),
+    sd_npco2 = sd(NpCO2, na.rm= TRUE),
+    tpco2_month = mean(TpCO2, na.rm = TRUE),
+    sd_tpco2 = sd(TpCO2, na.rm= TRUE),
+    pco2w_month = mean(pCO2_w, na.rm = TRUE),
+    sd_pco2w = sd(pCO2_w, na.rm= TRUE))
+```
+
+```{r regression analysis SOMLIT, echo=FALSE, warning=FALSE, message=FALSE}
+
+anomalies_SOM_month <- left_join(ungroup(SOMLIT), monthly_means, by = "month") %>%
+  mutate(sal_ano = salinity - sal_month,
+         temp_ano = temperature - temp_month,
+         oxy_ano = oxy_umol_kg - oxy_month,
+         aou_ano = AOU - aou_month,
+          ta_ano = ta - ta_month,
+          dic_ano = dic - dic_month,
+          phinsi_ano = pH_spec_insitu - phinsi_month,
+          phspec25_ano = pH_spec_25 - phspec25_month,
+          npco2_ano = NpCO2 - npco2_month,
+          tpco2_ano = TpCO2 - tpco2_month,
+         pco2w_ano = pCO2_w - pco2w_month)
+
+# Regression and table anomalies
+var_list <- c("temp_ano", "sal_ano","oxy_ano", "aou_ano", "ta_ano", "dic_ano", "phinsi_ano","phspec25_ano","npco2_ano", "tpco2_ano","pco2w_ano")
+
+lms <- lapply(var_list, function(x) {
+  summary(lm(substitute(i ~ decimal_date(datetime), list(i = as.name(x))), 
+             data = anomalies_SOM_month))
+})
+reg_raw <- NULL
+for (i in 1:length(var_list)) {
+  #one loops through all anomalies
+  # calculate probability of fstatistic because it cannot be extracted from lms above
+  # see http://stats.stackexchange.com/questions/92824/extracting-the-model-p-value-for-a-multiple-regression-in-r
+  # slope returned by lm is per second
+  prob <-
+    pf(lms[[i]]$fstatistic[1],
+       lms[[i]]$fstatistic[2],
+       lms[[i]]$fstatistic[3],
+       lower.tail = FALSE)
+  reg_raw <-
+    rbind(reg_raw, as.numeric(
+      c(
+        lms[[i]]$coefficients[2, 1],
+        lms[[i]]$coefficients[2, 2],
+        lms[[i]]$coefficients[2, 4],
+        lms[[i]]$coefficients[1, 1],
+        lms[[i]]$coefficients[1, 2],
+        lms[[i]]$coefficients[1, 4],
+        lms[[i]]$fstatistic[1],
+        lms[[i]]$fstatistic[3],
+        lms[[i]]$r.squared,
+        prob
+      )
+    ))
+}
+colnames(reg_raw) <-
+  c("Slope",
+    "SE Slope",
+    "P Slope",
+    "Intercept",
+    "SE int.",
+    "P int.",
+    "F",
+    "df",
+    "R2",
+    "P value")
+
+row.names(reg_raw) <- var_list
+reg_anomalies_raw <- reg_raw
+kable(reg_anomalies_raw, caption="Time series anomaly regression analyses per month", format = "pipe", align='l')
+
+##RAPPORT##
+# reg_anomalies_raw_rapport <- as.data.frame(reg_anomalies_raw)
+# reg_anomalies_raw_rapport <- reg_anomalies_raw_rapport %>% 
+#   mutate(Variables = c("T (°C)", "S"))
+# 
+# reg_anomalies_raw_rapport <- reg_anomalies_raw_rapport %>% 
+#   mutate( 
+#   `Pente ± sd` = paste(round(reg_anomalies_raw_rapport$Slope, digits=3), "±", round(reg_anomalies_raw_rapport$`SE Slope`, digits=4)), 
+#   `P pente` = reg_anomalies_raw_rapport$`P Slope`, 
+#   `Int. ± sd` = paste(round(reg_anomalies_raw_rapport$Intercept, digits=2), "±", round(reg_anomalies_raw_rapport$`SE int.`, digits=2)),
+#   `P Int.` = reg_anomalies_raw_rapport$`P int.`, 
+#   `R^2^` = round(reg_anomalies_raw_rapport$R2, digits=4))
+# 
+# 
+# reg_anomalies_raw_rapport <- reg_anomalies_raw_rapport[,c(11:16)]
+# 
+# kable(reg_anomalies_raw_rapport, caption="Time series anomaly regression analyses (EOL)", format = "pipe", align='l')
 
 ```
+
+### Temperature
+
+```{r SOM month - plot anomalies + trends - temperature, echo=FALSE, warning=FALSE, message=FALSE}
+slope <- reg_anomalies_raw[1,1]
+std <- reg_anomalies_raw[1,2]
+pv <-reg_anomalies_raw[1,10]
+
+plot_ano_temp_SOM_month <- ggplot(data = anomalies_SOM_month, aes(x = datetime, y = temp_ano), na.rm=TRUE) +
+  #scale_x_datetime(date_breaks="2 year", date_minor_breaks="1 years", labels = date_format("%Y")) +
+  geom_point(colour="blue", na.rm=TRUE, size=0.65) +
+  geom_smooth(method=lm, colour="black", fill="grey", linewidth=0.6, na.rm=TRUE) +
+  labs(title="SOMLIT - Temperature anomalies + trend",x="", y="Temperature (°C)")+
+  annotate(geom="text", x=as.POSIXct("2019-12-03 01:00:00"), y=5.5, label=paste0( "slope: ",  slope," ± ", std, ", P-value: ", pv), color="black")
+
+plot_ano_temp_SOM_month
+```
+
+
+Other parameters to come.
+
+
+
+
+
+
+# Other methods:
+
+**By autocorrelation + decompose function or Mann-Kendall : not possible because of gaps**
+
+--> Filling gaps.
+
+
 
 ## Moving average
 
 ### Temperature
 
-```{r moving average & mann kendall PtB - 2014 T, echo=FALSE, warning=FALSE, message=FALSE}
+```{r moving average SOMLIT T, echo=FALSE, warning=FALSE, message=FALSE}
 
 # data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
 #     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
@@ -218,7 +403,7 @@ plot_ts_temp_som_less_season <- autoplot(ts_temp_som_less_season) +
   xlab("") + ylab("Temp. (°C)") +
   ggtitle("Temperature time series at Pt B (without seasonality)") +
   geom_smooth(method=lm) +
-  annotate(geom="text", x=5, y=24, label="slope :  0.06 ± 0.014 (P = 2.99e-06, significative)", color="black")
+  annotate(geom="text", x=5, y=24, label="slope :  0.07 ± 0.016 (P = 2.99e-06, significative)", color="black")
 
 plot_ts_temp_som_less_season
 ```
@@ -227,7 +412,7 @@ Slope is `r round(model_ts_temp_less_season$coefficients[[2]],3)`.
 
 ### Salinity
 
-```{r moving average & mann kendall PtB - 2014 S, echo=FALSE, warning=FALSE, message=FALSE}
+```{r moving average SOMLIT S, echo=FALSE, warning=FALSE, message=FALSE}
 
 # data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
 #     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
@@ -271,19 +456,19 @@ summary(model_ts_sal_less_season)
 
 #plot with slope value :
 plot_ts_sal_som_less_season <- autoplot(ts_sal_som_less_season) +
-  xlab("") + ylab("Salinity (°C)") +
+  xlab("") + ylab("Salinity") +
   ggtitle("Salinity time series at Pt B (without seasonality)") +
   geom_smooth(method=lm) +
-  annotate(geom="text", x=10, y=36, label="slope :  -0.0002 ± 0.002 (P = 0.9, non-significative)", color="black")
+  annotate(geom="text", x=10, y=36, label="slope :  -0.0001 ± 0.002 (P = 0.9, non-significative)", color="black")
 
 plot_ts_sal_som_less_season
 ```
 
 Slope is `r round(model_ts_sal_less_season$coefficients[[2]],3)`.
 
-### Salinity
+### Oxygen
 
-```{r moving average & mann kendall PtB - 2014 S, echo=FALSE, warning=FALSE, message=FALSE}
+```{r moving average SOMLIT oxy, echo=FALSE, warning=FALSE, message=FALSE}
 
 # data_somlit_ts <- read_delim("./Data/data_PointB/DATA_SOMLIT_07-22_impute_0m.csv",
 #     delim = ";", escape_double = FALSE, trim_ws = TRUE) %>%
@@ -291,51 +476,489 @@ Slope is `r round(model_ts_sal_less_season$coefficients[[2]],3)`.
 #   mutate(Month = format(datetime, format="%m"))
 
 #Transfome data into TS, frequency : 365.25/7 = 52.17857
-ts_sal_som <- ts(SOMLIT$salinity, freq = 52)
+ts_oxy_som <- ts(SOMLIT$oxy_umol_kg, freq = 52)
 
 # look at the NA in the ts before filling
-ggplot_na_distribution(ts_sal_som )
+ggplot_na_distribution(ts_oxy_som )
 
 # filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
-ts_seadec <-  na_seadec(ts_sal_som, algorithm = "ma",find_frequency = TRUE)  
+ts_seadec <-  na_seadec(ts_oxy_som, algorithm = "ma",find_frequency = TRUE)  
 # plot 
-ggplot_na_imputations(x_with_na = ts_sal_som,
+ggplot_na_imputations(x_with_na = ts_oxy_som,
                           x_with_imputations = ts_seadec,
                           color_imputations = "gold")
  
  
 #decompose on filled data : ts_seadec
-ts_sal_som_decomp <- decompose(ts_seadec, type = "additive")
+ts_oxy_som_decomp <- decompose(ts_seadec, type = "additive")
 
-autoplot(ts_sal_som_decomp) +
+autoplot(ts_oxy_som_decomp) +
   xlab(' ')
 
 #remove seasonality :
-ts_sal_som_less_season <- ts_sal_som_decomp$x - ts_sal_som_decomp$seasonal
+ts_oxy_som_less_season <- ts_oxy_som_decomp$x - ts_oxy_som_decomp$seasonal
 
-plot_ts_sal_som_less_season <- autoplot(ts_sal_som_less_season) +
-  xlab("") + ylab("Salinity") +
-  ggtitle("Salinity time series at Pt B (without seasonality)") +
+plot_ts_oxy_som_less_season <- autoplot(ts_oxy_som_less_season) +
+  xlab("") + ylab("Oxygen (µmol kg") +
+  ggtitle("Oxygen time series at Pt B (without seasonality)") +
   geom_smooth(method=lm)
 
 #regression values :
-reg_val_ts_sal_som_less_season <- as.data.frame(plot_ts_sal_som_less_season$data)
+reg_val_ts_oxy_som_less_season <- as.data.frame(plot_ts_oxy_som_less_season$data)
 
-model_ts_sal_less_season <- lm(formula=y~x, data=reg_val_ts_sal_som_less_season)
-summary(model_ts_sal_less_season)
+model_ts_oxy_less_season <- lm(formula=y~x, data=reg_val_ts_oxy_som_less_season)
+summary(model_ts_oxy_less_season)
 
 
 #plot with slope value :
-plot_ts_sal_som_less_season <- autoplot(ts_sal_som_less_season) +
-  xlab("") + ylab("Salinity (°C)") +
-  ggtitle("Salinity time series at Pt B (without seasonality)") +
+plot_ts_oxy_som_less_season <- autoplot(ts_oxy_som_less_season) +
+  xlab("") + ylab("Oxygen (umol kg") +
+  ggtitle("Oxygen time series at Pt B (without seasonality)") +
   geom_smooth(method=lm) +
-  annotate(geom="text", x=10, y=36, label="slope :  -0.0002 ± 0.002 (P = 0.9, non-significative)", color="black")
+  annotate(geom="text", x=10, y=150, label="slope =  0.46 ± 0.15 (P = 0.001 (**), significative)", color="black")
 
-plot_ts_sal_som_less_season
+plot_ts_oxy_som_less_season
 ```
 
-Slope is `r round(model_ts_sal_less_season$coefficients[[2]],3)`.
+Slope is `r round(model_ts_oxy_less_season$coefficients[[2]],3)`.
+
+### AOU
+
+```{r moving average SOMLIT aou, echo=FALSE, warning=FALSE, message=FALSE}
+
+ts_aou_som <- ts(SOMLIT$AOU, freq = 52)
+
+# look at the NA in the ts before filling
+ggplot_na_distribution(x= SOMLIT$AOU, x_axis_labels= SOMLIT$datetime )
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_aou <-  na_seadec(ts_aou_som, algorithm = "ma",find_frequency = TRUE)  
+
+# plot 
+ggplot_na_imputations(x_with_na = SOMLIT$AOU,
+                          x_with_imputations = ts_seadec_aou,
+                          color_imputations = "gold")
+###########
+#decompose on filled data : ts_seadec_aou
+ts_aou_som_decomp <- decompose(ts_seadec_aou, type = "additive")
+
+autoplot(ts_aou_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_aou_som_less_season <- ts_aou_som_decomp$x - ts_aou_som_decomp$seasonal
+
+plot_ts_aou_som_less_season <- autoplot(ts_aou_som_less_season) +
+  xlab("") + ylab("aou") +
+  ggtitle("AOU time series at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_aou_som_less_season <- as.data.frame(plot_ts_aou_som_less_season$data)
+
+model_ts_aou_less_season <- lm(formula=y~x, data=reg_val_ts_aou_som_less_season)
+summary(model_ts_aou_less_season)
+
+
+#plot with slope value :
+slope <- round(model_ts_aou_less_season$coefficients[[2]],4)
+std <- round(sqrt(diag(vcov(model_ts_aou_less_season)))[[2]], 5)
+pv <-summary(model_ts_aou_less_season)$coefficients[[8]]
+
+plot_ts_aou_som_less_season <- autoplot(ts_aou_som_less_season) +
+  xlab("") + ylab("aou (°C)") +
+  ggtitle("AOU time series at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=100, y=100, label=paste0( "slope: ",  slope," ± ", std, ", P-value: ", pv), color="black")
+
+plot_ts_aou_som_less_season
+```
+
+Slope is `r round(model_ts_aou_less_season$coefficients[[2]],3)`.
+
+### pH spectro
+
+```{r moving average SOMLIT ph, echo=FALSE, warning=FALSE, message=FALSE}
+
+# subset dataframe to start in 2015 with pH, we remove 2014 which is not full
+SOMLIT_ph_spec <- SOMLIT %>% 
+  dplyr::filter(datetime >= "2015-01-01")
+
+# Periode shorter : 
+ts_ph_som <- ts(SOMLIT_ph_spec$pH_spec_insitu,  frequency = 52)
+frequency(ts_ph_som)
+# look at the NA in the ts before filling
+ggplot_na_distribution(ts_ph_som ) + coord_cartesian(ylim=c(7.85, 8.16))
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_ph <-  na_seadec(ts_ph_som, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = SOMLIT_ph_spec$pH_spec_insitu,
+                          x_with_imputations = ts_seadec_ph,
+                          color_imputations = "gold")
+###########
+#decompose on filled data : ts_seadec_ph
+ts_ph_som_decomp <- decompose(ts_seadec_ph, type = "additive")
+
+autoplot(ts_ph_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_ph_som_less_season <- ts_ph_som_decomp$x - ts_ph_som_decomp$seasonal
+
+plot_ts_ph_som_less_season <- autoplot(ts_ph_som_less_season) +
+  xlab("") + ylab("ph") +
+  ggtitle("pH time series at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_ph_som_less_season <- as.data.frame(plot_ts_ph_som_less_season$data)
+
+model_ts_ph_less_season <- lm(formula=y~x, data=reg_val_ts_ph_som_less_season)
+summary(model_ts_ph_less_season)
+
+
+#plot with slope value :
+# library(broom)
+# tab <- broom::tidy(lm_fit)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   pull(p.value)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   dplyr::filter(term=="x") %>%
+#   pull(p.value)
+
+slope <- round(model_ts_ph_less_season$coefficients[[2]],4)
+std <- round(sqrt(diag(vcov(model_ts_ph_less_season)))[[2]], 5)
+pv <-summary(model_ts_ph_less_season)$coefficients[[8]]
+
+plot_ts_ph_som_less_season <- autoplot(ts_ph_som_less_season) +
+  xlab("") + ylab("pH") +
+  ggtitle("pH spec time series (2015-2022) at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=4, y=8.15, label=paste0( "slope: ",  slope," ± ", std, ", P-value: ", pv), color="black")
+
+plot_ts_ph_som_less_season
+```
+
+Slope is `r round(model_ts_ph_less_season$coefficients[[2]],4)`.
+
+### pH spect 25°C
+
+```{r moving average SOMLIT ph spec 25, echo=FALSE, warning=FALSE, message=FALSE}
+
+# subset dataframe to start in 2015 with pH, we remove 2014 which is not full
+SOMLIT_ph_spec25 <- SOMLIT %>% 
+  dplyr::filter(datetime >= "2016-07-12") %>%   #"2016-07-12
+  dplyr::select(pH_spec_25,pH_spec_insitu, everything())
+
+# Periode shorter : 
+ts_ph25_som <- ts(SOMLIT_ph_spec25$pH_spec_25,  frequency = 52)
+# look at the NA in the ts before filling
+ggplot_na_distribution(ts_ph25_som ) + coord_cartesian(ylim=c(7.8, 8.06))
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_ph25 <-  na_seadec(ts_ph25_som, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = SOMLIT_ph_spec25$pH_spec_25,
+                          x_with_imputations = ts_seadec_ph25,
+                          color_imputations = "gold")
+###########
+#decompose on filled data : ts_seadec_ph18
+ts_ph25_som_decomp <- decompose(ts_seadec_ph25, type = "additive")
+
+autoplot(ts_ph25_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_ph25_som_less_season <- ts_ph25_som_decomp$x - ts_ph25_som_decomp$seasonal
+
+plot_ts_ph25_som_less_season <- autoplot(ts_ph25_som_less_season) +
+  xlab("") + ylab("ph") +
+  ggtitle("pH25 time series at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_ph25_som_less_season <- as.data.frame(plot_ts_ph25_som_less_season$data)
+
+model_ts_ph25_less_season <- lm(formula=y~x, data=reg_val_ts_ph25_som_less_season)
+summary(model_ts_ph25_less_season)
+
+
+#plot with slope value :
+# library(broom)
+# tab <- broom::tidy(lm_fit)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   pull(p.value)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   dplyr::filter(term=="x") %>%
+#   pull(p.value)
+
+slope <- round(model_ts_ph25_less_season$coefficients[[2]],4)
+std <- round(sqrt(diag(vcov(model_ts_ph25_less_season)))[[2]], 5)
+pv <-summary(model_ts_ph25_less_season)$coefficients[[8]]
+
+plot_ts_ph25_som_less_season <- autoplot(ts_ph25_som_less_season) +
+  xlab("") + ylab("pH") +
+  ggtitle("pH 25 spec time series (2016-2022) at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=4, y=8.02, label=paste0( "slope: ",  slope," ± ", std, ", P-value: ", pv), color="black")
+
+plot_ts_ph25_som_less_season
+```
+
+Slope is `r round(model_ts_ph25_less_season$coefficients[[2]],4)`.
+
+### AT
+
+- Data before 2022-09-28.
+
+```{r moving average SOMLIT AT, echo=FALSE, warning=FALSE, message=FALSE}
+
+# subset dataframe to start in 2015 with pH, we remove 2014 which is not full
+SOMLIT_atct <- SOMLIT %>% 
+  dplyr::filter(datetime <= "2022-09-28")
+
+# Periode shorter : 
+ts_at_som <- ts(SOMLIT_atct$ta,  frequency = 52)
+# look at the NA in the ts before filling
+ggplot_na_distribution(ts_at_som ) + coord_cartesian(ylim=c(2430, 2600))
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_ta <-  na_seadec(ts_at_som, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = SOMLIT_atct$ta,
+                          x_with_imputations = ts_seadec_ta,
+                          color_imputations = "gold")
+###########
+#decompose on filled data : ts_seadec_ph18
+ts_ta_som_decomp <- decompose(ts_seadec_ta, type = "additive")
+
+autoplot(ts_ta_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_ta_som_less_season <- ts_ta_som_decomp$x - ts_ta_som_decomp$seasonal
+
+plot_ts_ta_som_less_season <- autoplot(ts_ta_som_less_season) +
+  xlab("") + ylab("TA") +
+  ggtitle("TA time series at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_ta_som_less_season <- as.data.frame(plot_ts_ta_som_less_season$data)
+
+model_ts_ta_less_season <- lm(formula=y~x, data=reg_val_ts_ta_som_less_season)
+summary(model_ts_ta_less_season)
+
+
+#plot with slope value :
+# library(broom)
+# tab <- broom::tidy(lm_fit)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   pull(p.value)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   dplyr::filter(term=="x") %>%
+#   pull(p.value)
+
+slope <- round(model_ts_ta_less_season$coefficients[[2]],4)
+std <- round(sqrt(diag(vcov(model_ts_ta_less_season)))[[2]], 5)
+pv <-summary(model_ts_ta_less_season)$coefficients[[8]]
+
+plot_ts_ta_som_less_season <- autoplot(ts_ta_som_less_season) +
+  xlab("") + ylab("pH") +
+  ggtitle("TA time series (2016-2022) at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=10, y=2490, label=paste0( "slope: ",  slope," ± ", std, ", P-value: ", pv), color="black")
+
+plot_ts_ta_som_less_season
+```
+
+### DIC
+
+- Data before 2022-09-29.
+
+```{r moving average SOMLIT dic, echo=FALSE, warning=FALSE, message=FALSE}
+
+# Periode shorter : 
+ts_dic_som <- ts(SOMLIT_atct$dic,  frequency = 52)
+# look at the NA in the ts before filling
+ggplot_na_distribution(ts_dic_som ) + coord_cartesian(ylim=c(2180, 2350))
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_dic <-  na_seadec(ts_dic_som, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = SOMLIT_atct$dic,
+                          x_with_imputations = ts_seadec_dic,
+                          color_imputations = "gold")
+###########
+#decompose on filled data : ts_seadec_ph18
+ts_dic_som_decomp <- decompose(ts_seadec_dic, type = "additive")
+
+autoplot(ts_dic_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_dic_som_less_season <- ts_dic_som_decomp$x - ts_dic_som_decomp$seasonal
+
+plot_ts_dic_som_less_season <- autoplot(ts_dic_som_less_season) +
+  xlab("") + ylab("dic") +
+  ggtitle("dic time series at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_dic_som_less_season <- as.data.frame(plot_ts_dic_som_less_season$data)
+
+model_ts_dic_less_season <- lm(formula=y~x, data=reg_val_ts_dic_som_less_season)
+summary(model_ts_dic_less_season)
+
+
+#plot with slope value :
+# library(broom)
+# tab <- broom::tidy(lm_fit)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   pull(p.value)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   dplyr::filter(term=="x") %>%
+#   pull(p.value)
+
+slope <- round(model_ts_dic_less_season$coefficients[[2]],4)
+std <- round(sqrt(diag(vcov(model_ts_dic_less_season)))[[2]], 5)
+pv <-summary(model_ts_dic_less_season)$coefficients[[8]]
+
+plot_ts_dic_som_less_season <- autoplot(ts_dic_som_less_season) +
+  xlab("") + ylab("pH") +
+  ggtitle("dic time series (2016-2022) at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=10, y=2330, label=paste0( "slope: ",  slope," ± ", std, ", P-value: ", pv), color="black")
+
+plot_ts_dic_som_less_season
+```
+
+Slope is `r round(model_ts_dic_less_season$coefficients[[2]],4)`.
+
+### pCO2
+
+- pCO2 from 2007-01 to 2008-12.
+- pCO2_w from 2009-01 to 2022-09.
+- pCO2_atmos from 2009-01 to 2021-12
+- NpCO2 from 2009-01 to 2022-09.
+- TpCO2 from 2009-01 to 2022-12.
+
+```{r moving average SOMLIT npco2, echo=FALSE, warning=FALSE, message=FALSE}
+# Periode shorter : 
+ts_npco2_som <- ts(dplyr::select(SOMLIT %>% dplyr::filter(datetime > "2009-01-01" & datetime< "2021-12-31"), NpCO2),  frequency = 52)
+# look at the NA in the ts before filling
+ggplot_na_distribution(ts_npco2_som ) + coord_cartesian(ylim=c(300, 510))
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_npco2 <-  na_seadec(ts_npco2_som, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = dplyr::select(SOMLIT %>% dplyr::filter(datetime > "2009-01-01" & datetime< "2021-12-31"), NpCO2),
+                          x_with_imputations = ts_seadec_npco2,
+                          color_imputations = "gold")
+###########
+#decompose on filled data : ts_seadec_ph18
+ts_npco2_som_decomp <- decompose(ts_seadec_npco2, type = "additive")
+
+autoplot(ts_npco2_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_npco2_som_less_season <- ts_npco2_som_decomp$x - ts_npco2_som_decomp$seasonal
+
+plot_ts_npco2_som_less_season <- autoplot(ts_npco2_som_less_season) +
+  xlab("") + ylab("NpCO2") +
+  ggtitle("NpCO2 time series at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_npco2_som_less_season <- as.data.frame(plot_ts_npco2_som_less_season$data)
+
+model_ts_npco2_less_season <- lm(formula=y~x, data=reg_val_ts_npco2_som_less_season)
+summary(model_ts_npco2_less_season)
+
+
+#plot with slope value :
+# library(broom)
+# tab <- broom::tidy(lm_fit)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   pull(p.value)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   dplyr::filter(term=="x") %>%
+#   pull(p.value)
+
+slope <- round(model_ts_npco2_less_season$coefficients[[2]],4)
+std <- round(sqrt(diag(vcov(model_ts_npco2_less_season)))[[2]], 5)
+pv <-summary(model_ts_npco2_less_season)$coefficients[[8]]
+
+plot_ts_npco2_som_less_season <- autoplot(ts_npco2_som_less_season) +
+  xlab("") + ylab("NpCO2") +
+  ggtitle("NpCO2 time series (2009-01 to 2021-12) at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=10, y=330, label=paste0( "slope: ",  slope," ± ", std, ", P-value: ", pv), color="black")
+
+plot_ts_npco2_som_less_season
+```
+
+Slope is `r round(model_ts_npco2_less_season$coefficients[[2]],4)`.
+
+```{r moving average SOMLIT tpco2, echo=FALSE, warning=FALSE, message=FALSE}
+# Periode shorter : 
+ts_tpco2_som <- ts(dplyr::select(SOMLIT %>% dplyr::filter(datetime > "2009-01-01" & datetime< "2022-12-31"), TpCO2),  frequency = 52)
+# look at the NA in the ts before filling
+ggplot_na_distribution(ts_tpco2_som ) + coord_cartesian(ylim=c(300, 620))
+
+# filling datat(imputation) with na_seadec() = Removes the seasonal component from the time series, performs imputation on the deseasonalized series and afterwards adds the seasonal component again.
+ts_seadec_tpco2 <-  na_seadec(ts_tpco2_som, algorithm = "ma",find_frequency = TRUE)  
+# plot 
+ggplot_na_imputations(x_with_na = dplyr::select(SOMLIT %>% dplyr::filter(datetime > "2009-01-01" & datetime< "2022-12-31"), TpCO2),
+                          x_with_imputations = ts_seadec_tpco2,
+                          color_imputations = "gold")
+###########
+#decompose on filled data : ts_seadec_ph18
+ts_tpco2_som_decomp <- decompose(ts_seadec_tpco2, type = "additive")
+
+autoplot(ts_tpco2_som_decomp) +
+  xlab(' ')
+
+#remove seasonality :
+ts_tpco2_som_less_season <- ts_tpco2_som_decomp$x - ts_tpco2_som_decomp$seasonal
+
+plot_ts_tpco2_som_less_season <- autoplot(ts_tpco2_som_less_season) +
+  xlab("") + ylab("TpCO2") +
+  ggtitle("TpCO2 time series at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm)
+
+#regression values :
+reg_val_ts_tpco2_som_less_season <- as.data.frame(plot_ts_tpco2_som_less_season$data)
+
+model_ts_tpco2_less_season <- lm(formula=y~x, data=reg_val_ts_tpco2_som_less_season)
+summary(model_ts_tpco2_less_season)
+
+
+#plot with slope value :
+# library(broom)
+# tab <- broom::tidy(lm_fit)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   pull(p.value)
+# broom::tidy(model_ts_ph_less_season) %>%
+#   dplyr::filter(term=="x") %>%
+#   pull(p.value)
+
+slope <- round(model_ts_tpco2_less_season$coefficients[[2]],4)
+std <- round(sqrt(diag(vcov(model_ts_tpco2_less_season)))[[2]], 5)
+pv <-summary(model_ts_tpco2_less_season)$coefficients[[8]]
+
+plot_ts_tpco2_som_less_season <- autoplot(ts_tpco2_som_less_season) +
+  xlab("") + ylab("TpCO2") +
+  ggtitle("TpCO2 time series (2009-01 to 2022-12) at SOMLIT (without seasonality)") +
+  geom_smooth(method=lm) +
+  annotate(geom="text", x=10, y=330, label=paste0( "slope: ",  slope," ± ", std, ", P-value: ", pv), color="black")
+
+plot_ts_tpco2_som_less_season
+```
+
+Slope is `r round(model_ts_tpco2_less_season$coefficients[[2]],4)`.
 
 ## Mann-Kendall
 
@@ -357,7 +980,71 @@ Results:
 
 ### Temperature
 
-```{r mann kendall EOL temp, echo=FALSE, warning=FALSE, message=FALSE}
-FFtemp_som <- kendallSeasonalTrendTest(temp_SOM ~ month(datetime) + year(datetime), data = SOMLIT)
+```{r mann kendall SOM temp, echo=FALSE, warning=FALSE, message=FALSE}
+FFtemp_som <- kendallSeasonalTrendTest(impute_temp ~ month(datetime) + year(datetime), data = SOMLIT)
 FFtemp_som$estimate
+```
+
+### Salinity
+
+```{r mann kendall SOM sal, echo=FALSE, warning=FALSE, message=FALSE}
+FFsal_som <- kendallSeasonalTrendTest(impute_sal ~ month(datetime) + year(datetime), data = SOMLIT)
+FFsal_som$estimate
+```
+
+### Oxygen
+
+```{r mann kendall SOM oxy, echo=FALSE, warning=FALSE, message=FALSE}
+FFoxy_som <- kendallSeasonalTrendTest(oxy_umol_kg ~ month(datetime) + year(datetime), data = SOMLIT)
+FFoxy_som$estimate
+```
+
+### AOU
+
+```{r mann kendall SOM aou, echo=FALSE, warning=FALSE, message=FALSE}
+FFaou_som <- kendallSeasonalTrendTest(AOU ~ month(datetime) + year(datetime), data = SOMLIT)
+FFaou_som$estimate
+```
+
+### pH spectro
+
+```{r mann kendall SOM ph, echo=FALSE, warning=FALSE, message=FALSE}
+FFph_som <- kendallSeasonalTrendTest(pH_spec_insitu ~ month(datetime) + year(datetime), data = SOMLIT)
+FFph_som$estimate
+```
+
+### pH spectro 25°C
+
+```{r mann kendall SOM ph25, echo=FALSE, warning=FALSE, message=FALSE}
+FFph25_som <- kendallSeasonalTrendTest(pH_spec_25 ~ month(datetime) + year(datetime), data = SOMLIT)
+FFph25_som$estimate
+```
+
+### TA
+
+```{r mann kendall SOM ta, echo=FALSE, warning=FALSE, message=FALSE}
+FFta_som <- kendallSeasonalTrendTest(ta ~ month(datetime) + year(datetime), data = SOMLIT)
+FFta_som$estimate
+```
+
+### DIC
+
+```{r mann kendall SOM dic, echo=FALSE, warning=FALSE, message=FALSE}
+FFdic_som <- kendallSeasonalTrendTest(dic ~ month(datetime) + year(datetime), data = SOMLIT)
+FFdic_som$estimate
+```
+
+
+### NpCO2
+
+```{r mann kendall SOM NpCO2, echo=FALSE, warning=FALSE, message=FALSE}
+FFnpco2_som <- kendallSeasonalTrendTest(NpCO2 ~ month(datetime) + year(datetime), data = SOMLIT)
+FFnpco2_som$estimate
+```
+
+### TpCO2
+
+```{r mann kendall SOM TpCO2, echo=FALSE, warning=FALSE, message=FALSE}
+FFtpco2_som <- kendallSeasonalTrendTest(TpCO2 ~ month(datetime) + year(datetime), data = SOMLIT)
+FFtpco2_som$estimate
 ```
